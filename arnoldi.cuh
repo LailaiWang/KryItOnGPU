@@ -7,6 +7,7 @@
 #include <cmath>
 #include <stdlib.h>
 #include <stdio.h>
+#include "cublas_v2.h"
 
 template<unsigned int threads_per_block, typename T>
 __global__ 
@@ -102,6 +103,23 @@ void vec_norm_wrapper(T* vec,
     cudaFree(norm);
 }
 
+/** \fn normalize a vector and store in 
+ *  \param[in] vec vector to be normalized
+ *  \param[out] out put of the normalized vector
+ *  \param[int] dimension of the problem
+ */
+template<unsigned int threads_per_block, typename T> 
+void vec_normq_wrapper(T* vec,
+                       T* vecn,
+                       unsigned int col,
+                       unsigned int xdim) {
+    unsigned int blocks = ceil(float(xdim)/threads_per_block);
+    T* norm;
+    cudaMalloc((void **) &norm, sizeof(T));
+    vec_dot_wrapper <threads_per_block, T> (vec, vec, norm, xdim);
+    vec_normalize<T><<< blocks, threads_per_block>>>(vec, vecn, norm, xdim);
+    cudaFree(norm);
+}
 
 template<unsigned int threads_per_block, typename T>
 void update_hjk(T* Qj,  T* v, T* hjk, unsigned int xdim) {
@@ -126,27 +144,11 @@ void update_v(T* v, T* hjk, T* Qj, unsigned int xdim) {
     }
 }
 
-
-/**
- * \fn utility function to print the data out for debugging purpose
- *
- */
-
 template<typename T>
 __global__
-void print_data(T* a, unsigned int xdim) {
-    unsigned int idx = blockIdx.x*blockDim.x + threadIdx.x;
-    
-    if(idx<xdim) printf("a[%d] is %f\n", idx, a[idx]);
-
-}
-
-template<typename T> 
-void print_data_wrapper(T* a, unsigned int xdim) {
-    const unsigned int threads_per_block = 256;
-    unsigned int blocks = ceil(float(xdim)/threads_per_block);
-    print_data<T> <<<blocks, threads_per_block>>>(a, xdim);
-    cudaDeviceSynchronize();
+void sqrt_point_value(T* v) {
+    *v = std::sqrt(*v); 
+    return;
 }
 
 /** \fn arnoldi iteration
@@ -160,10 +162,13 @@ void print_data_wrapper(T* a, unsigned int xdim) {
  *  \param[in] dimension of the krylov space
  */
 // place col in Q and h continuously as the Krylov vectors
+// h(j,k) k 
+// Q(:,j)
+
+
 template<typename T>
 void arnoldi(void (*MatDotVec)(T*, T*, unsigned int), 
              T* b,
-             T* q,
              T* Q,
              T* h,
              T* v,
@@ -173,38 +178,41 @@ void arnoldi(void (*MatDotVec)(T*, T*, unsigned int),
     const unsigned int threads_per_block = 256;
     unsigned int blocks = ceil(float(xdim)/threads_per_block);
     
-    // normalize the b vector as  the first 
-    vec_norm_wrapper<threads_per_block, T> (b, q, xdim);
+    // starting address of Q and h
+    unsigned long long int Q0 = reinterpret_cast<unsigned long long int> (Q);
+    unsigned long long int h0 = reinterpret_cast<unsigned long long int> (h);
+    // normalize and store in the first col of Q
+    vec_norm_wrapper<threads_per_block, T> (b, Q, xdim);
 
-    // copy q into Q
-    unsigned int col = 0;
-    assign_column<T><<<blocks, threads_per_block>>>(Q, q, col, xdim);
-
-    for(int k=1;k<kspace+1;k++) {
+    for(unsigned int k=1;k<kspace+1;k++) {
         // calculate v as dot(A,q)
         // using matrix-free approximation
-        MatDotVec(v, q, xdim); 
+        MatDotVec(v, reinterpret_cast<T*>(Q0+sizeof(T)*xdim*(k-1)), xdim); 
 
-        for(int j=0;j<k;j++) {
-            T* hjk= &h[j+(k-1)*(kspace+1)]; // h[j,k-1] // grab the address of hjk
-            T* Qj = &Q[0+j*xdim]; // Q[:,j] // grad the address of Qj column
+        for(unsigned int j=0;j<k;j++) {
+            // since cols of the matrix are stored continuously
+            // the offset of hjk is k*(kspace+1) + j (h is a (kspace+1)*kspace matrix)
+            T* hjk = reinterpret_cast<T*> (h0+sizeof(T)*(j+(k-1)*(kspace+1)));
+            // the offset of Qj is  since Qj is a xdim*kspace matrix
+            T* Qj  = reinterpret_cast<T*> (Q0+sizeof(T)*(xdim*j));
             update_hjk<threads_per_block, T> (Qj, v, hjk, xdim);
-            
             // update v
             update_v  <T> <<<blocks, threads_per_block>>> (v, hjk, Qj, xdim);
-            continue;
         }
         
-        T* hkp1k = &h[(k+1)+k*(kspace+1)];
+        T* hkp1k = reinterpret_cast<T*> (h0+sizeof(T)*((k)+(k-1)*(kspace+1)));
         vec_dot_wrapper<threads_per_block, T>(v, v, hkp1k, xdim);
         
         T norm_h = 0.0;
         cudaMemcpy(&norm_h, hkp1k, sizeof(T), cudaMemcpyDeviceToHost);
 
         if(norm_h>1e-12) {
-            vec_normalize<T><<< blocks, threads_per_block >>>(v, q, hkp1k, xdim);
-            assign_column<T><<< blocks, threads_per_block >>>(Q, q, k, xdim);
+            vec_normalize<T><<< blocks, threads_per_block >>>(
+                v, reinterpret_cast<T*> (Q0+sizeof(T)*((k)*xdim)), hkp1k, xdim
+            );
+            sqrt_point_value<<<1,1>>>(hkp1k);
         } else {
+            sqrt_point_value<<<1,1>>>(hkp1k);
             return;
         }
 

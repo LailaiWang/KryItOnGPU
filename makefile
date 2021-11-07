@@ -4,7 +4,7 @@ CUC = nvcc
 CXX = mpicxx
 
 CFLAGS = -std=c++17 -fPIC -rdynamic -fsigned-char 
-CUFLAGS = -std=c++11 --default-stream per-thread -Xcompiler -fPIC -Xcompiler -fsigned-char 
+CUFLAGS = -std=c++17 --default-stream per-thread -Xcompiler -fPIC -Xcompiler -fsigned-char 
 
 # these are for swig
 MPI4PY_INC_DIR = /home/laiwang/.local/lib/python3.8/site-packages/mpi4py/include
@@ -27,7 +27,7 @@ MPI_LIB_DIR = $(MPI_DIR)/lib
 
 INCLUDES = -I $(CUDA_INC_DIR) -I $(MPI_INC_DIR)
 
-LIBS = -L $(CUDA_LIB_DIR) -lcudart -Wl,-rpath=$(CUDA_LIB_DIR)
+LIBS = -L $(CUDA_LIB_DIR) -lcudart -lcublas -Wl,-rpath=$(CUDA_LIB_DIR)
 LIBS += -L $(MPI_LIB_DIR) -lmpi -Wl,-rpath=$(MPI_LIB_DIR)
 
 BINDIR = $(CURDIR)/$(MODULENAME)
@@ -36,7 +36,7 @@ INCDIR = $(CURDIR)
 
 LDFLAGS = 
 
-OBJECTS=$(BINDIR)/main.o $(BINDIR)/drive1.o
+OBJECTS=$(BINDIR)/main.o $(BINDIR)/drive1.o  $(BINDIR)/cublas_ctx.o $(BINDIR)/gmres_ctx.o
 
 default: $(OBJECTS)
 	$(CXX) $(CFLAGS) $(OBJECTS) $(OBJEXEC) $(LDFLAGS) $(LIBS) -lm -o $(BINDIR)/$(MODULENAME)

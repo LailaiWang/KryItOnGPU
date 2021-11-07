@@ -31,3 +31,11 @@ void MatDotVec_wrapper(T* c, T* b, unsigned int xdim) {
     MatDotVec<T><<<blocks, threads_per_block >>>(c, b, xdim);
 }
 
+template<typename T> 
+void MFPreconditioner(void *mfprecon) {
+    T tmp = 0.0;
+    
+    return;
+};
+
+
