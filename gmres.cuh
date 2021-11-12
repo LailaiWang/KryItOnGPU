@@ -477,10 +477,10 @@ void MFgmres(void (*MatDotVec) (T*, T*, unsigned int), /* matrix-vector product*
             CUBLAS_FILL_MODE_UPPER, 
             CUBLAS_OP_N,
             CUBLAS_DIAG_NON_UNIT,
-            kspace,1,
+            cnt,1,
             &P_1F,
             h, kspace+1,
-            v, kspace
+            beta, cnt 
         );
     } else 
     if constexpr (std::is_same<double, T>::value) {
@@ -500,6 +500,9 @@ void MFgmres(void (*MatDotVec) (T*, T*, unsigned int), /* matrix-vector product*
     /*after we solve the least square problem, we update x*/
     // update x = x+c*Qkp1
     if constexpr (std::is_same<float, T>::value) {
+        for(unsigned int k=0;k<cnt;k++) {
+            get_soln_d<<<1,256>>>(beta+k, x, Q+k*xdim, xdim);
+        }
     } else 
     if constexpr (std::is_same<double, T>::value) {
         for(unsigned int k=0;k<cnt;k++) {
