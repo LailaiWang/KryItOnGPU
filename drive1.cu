@@ -4,10 +4,12 @@
 #include "stdio.h"
 #include <vector>
 #include "util.cuh"
+#include <iostream>
+#include "cuda_runtime.h"
+#include "cublas_v2.h"
 
-// instantiate the function for debugging purpose
 void (*print_on_gpu) (double*, unsigned int) = &print_data_wrapper<double>;
-
+// instantiate the function for debugging purpose
 int driver1() {
     
     unsigned int xdim    = 6;
@@ -56,8 +58,8 @@ int driver1() {
 
 int driver2() {
 
-    unsigned int xdim    = 6;
-    unsigned int kspace  = 5;
+    unsigned int xdim    = 200;
+    unsigned int kspace  = 200;
     
     std::vector<double> bvec(xdim, 1.0);
     std::vector<double> Qvec(xdim*(kspace+1), 0.0);
@@ -70,7 +72,7 @@ int driver2() {
     double *v = vvec.data();
 
     struct gmres_app_ctx gctx(
-        xdim, kspace, 1e-7, 1e-5, 
+        xdim, kspace, 1e-10, 1e-9, 
         &allocate_ram_gmres_app_ctx,
         &deallocate_ram_gmres_app_ctx
     );
@@ -81,13 +83,13 @@ int driver2() {
         gctx.xdim, 
         gctx.kspace
     );
-    
+
     cudaMemcpy(gctx.b, b, xdim*sizeof(double), cudaMemcpyHostToDevice);
 
     double *x_d, *res_d;
     cudaMalloc((void**) &x_d,   xdim*sizeof(double));
     cudaMalloc((void**) &res_d, xdim*sizeof(double));
-    struct precon_app_ctx pctx(x_d, res_d);
+    struct precon_app_ctx pctx(x_d, res_d, xdim);
     
     struct cublas_app_ctx bctx (&initialize_cublas, &finalize_cublas);
     bctx.create_cublas(&bctx.handle);
@@ -97,20 +99,26 @@ int driver2() {
     unsigned long long int btxaddr = reinterpret_cast<unsigned long long int> (&bctx);
 
     void (*fn) (double*, double*, unsigned int) = &MatDotVec_wrapper<double>;
-    void (*fprecon) (void*) = &MFPreconditioner<double>;
+    void (*fprecon) (void*, double*) = &MFPreconditioner<double>;
 
     void (*gmresSol) (
         void (*) (double*, double*, unsigned int),
-        void (*) (void*),
+        void (*) (void*, double*),
         unsigned long long int,
         unsigned long long int,
         unsigned long long int
     ) = &MFgmres<double>;
 
     gmresSol(fn, fprecon, ptxaddr, ctxaddr, btxaddr);
-
+    
     cudaMemcpy(Q, gctx.Q, xdim*(kspace+1)*sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(h, gctx.h, kspace*(kspace+1)*sizeof(double), cudaMemcpyDeviceToHost);
+
+    std::vector<double> soln(xdim, 0.0);
+
+    cudaMemcpy(soln.data(), x_d, xdim*sizeof(double), cudaMemcpyDeviceToHost);
+    
+    for(auto &d : soln) std::cout<<"sol "<<d<<std::endl;
 
     bctx.clean_cublas(&bctx.handle);
 
@@ -123,3 +131,4 @@ int driver2() {
     cudaFree(res_d);
     return 0;
 }
+

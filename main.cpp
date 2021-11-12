@@ -12,7 +12,6 @@ int main(int argc, char **args) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &pid);
 #endif
-    driver1();
     driver2();
 #ifdef _MPI    
     MPI_Finalize();

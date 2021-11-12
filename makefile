@@ -14,8 +14,8 @@ SWIG_BIN = /usr/bin
 
 SGFLAGS = -I $(PYTHON_INC_DIR) -I$(MPI4PY_INC_DIR) -I$(NUMPY_INC_DIR)
 
-CFLAGS += -g 
-CUFLAGS += -g 
+CFLAGS +=  -O3
+CUFLAGS += -O3 
 
 CUDA_DIR = /usr/local/cuda-11.3
 CUDA_INC_DIR = $(CUDA_DIR)/include
@@ -36,7 +36,8 @@ INCDIR = $(CURDIR)
 
 LDFLAGS = 
 
-OBJECTS=$(BINDIR)/main.o $(BINDIR)/drive1.o  $(BINDIR)/cublas_ctx.o $(BINDIR)/gmres_ctx.o
+OBJECTS=$(BINDIR)/main.o $(BINDIR)/drive1.o  $(BINDIR)/cublas_ctx.o \
+        $(BINDIR)/gmres_ctx.o  
 
 default: $(OBJECTS)
 	$(CXX) $(CFLAGS) $(OBJECTS) $(OBJEXEC) $(LDFLAGS) $(LIBS) -lm -o $(BINDIR)/$(MODULENAME)

@@ -1,6 +1,7 @@
 #ifndef __UTIL__CUH__
 #define __UTIL__CUH__
 
+#include <iostream>
 #include "cuda_runtime.h"
 /**
  * \fn utility function to print the data out for debugging purpose
@@ -24,5 +25,12 @@ void print_data_wrapper(T* a, unsigned int xdim) {
     cudaDeviceSynchronize();
 }
 
+
+#define CUDA_CALL( call )               \
+{                                       \
+cudaError_t result = call;              \
+if ( cudaSuccess != result )            \
+    std::cerr << "CUDA error " << result << " in " << __FILE__ << ":" << __LINE__ << ": " << cudaGetErrorString( result ) << " (" << #call << ")" << std::endl;  \
+}
 
 #endif

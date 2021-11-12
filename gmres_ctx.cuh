@@ -3,6 +3,7 @@
 
 #include "cuda_runtime.h"
 
+
 void allocate_ram_gmres_app_ctx(
         double* &b,  double* &Q,  double* &h,  double* &v,
         double* &sn, double* &cs, double* &e1, double* &beta,
@@ -14,13 +15,26 @@ void deallocate_ram_gmres_app_ctx(
         double* &sn, double* &cs, double* &e1, double* &beta
 ); 
 
+void set_ones_const();
+
+enum gmres_conv_reason {GMRES_NOT_CONV = 0,
+                        GMRES_CONV_ABS = 1,
+                        GMRES_CONV_REL = 2,
+                        GMRES_CONV_MAX_ITER = 3,
+                        GMRES_DIV=-1};
+
 // passing pointer around
 struct gmres_app_ctx {
     unsigned int xdim = 0;    // dimension of the square matrix
     unsigned int kspace = 0;  // dimension of the krylov subpspace max iteration number
 
-    double atol=1e-7;
-    double rtol=1e-4;
+    double atol=1e-11;
+    double rtol=1e-10;
+
+    gmres_conv_reason convrson = GMRES_NOT_CONV;
+    
+    unsigned int maxiters = 3500;
+    unsigned int conv_iters = 0;
 
     gmres_app_ctx(unsigned int dim, unsigned int space, double at, double rt,
                  void (*allocate) (
@@ -71,11 +85,12 @@ struct gmres_app_ctx {
 struct precon_app_ctx {
     double* x;
     double* res;
-    
+    unsigned int xdim;  
     /*these two from spatial solver*/
-    precon_app_ctx(double *xin, double *resin) {
+    precon_app_ctx(double *xin, double *resin, unsigned int uk) {
         x   = xin;
         res = resin;
+        xdim = uk;
     }
 };
 
