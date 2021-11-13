@@ -402,20 +402,11 @@ void MFgmres(void (*MatDotVec) (T*, T*, unsigned int), /* matrix-vector product*
             /*apply givens rotation for first k items*/
             /* input x <----- h0j*/
             /* input y <----- h1j*/
-            if (k <=1 ) goto ROTATE_LAST_TWO_F;
             apply_rot_f<<<1,1>>>(h+(k-1)*(kspace+1), cs, sn,k-1);
             /*apply givens totation to last two items*/
-            ROTATE_LAST_TWO_F: {
-                givens_rot_f<<<1,1>>>(
-                    h+k-1+(k-1)*(kspace+1), h+k+0+(k-1)*(kspace+1), cs+k-1, sn+k-1
-                );
-
-                // rotate corresponding beta
-                // beta (k+1) = -sn(k)*beta(k)
-                // beta (k  ) =  cs(k)*beta(k)
-                dot_one_f<<<1,1>>>(sn+k-1,beta+k-1,beta+k,  -1.0);
-                dot_one_f<<<1,1>>>(cs+k-1,beta+k-1,beta+k-1, 1.0);
-            }
+            givens_rot_f<<<1,1>>>(
+                h+k-1+(k-1)*(kspace+1), h+k+0+(k-1)*(kspace+1), cs+k-1, sn+k-1
+            );
         } else 
         if constexpr (std::is_same<double, T>::value) {
             /*apply givens rotation for first k items*/
@@ -443,20 +434,16 @@ void MFgmres(void (*MatDotVec) (T*, T*, unsigned int), /* matrix-vector product*
         cnt += 1;
         gmres_ctx->conv_iters += 1;
         if(error < atol) { 
-            std::cout<<" abs converged at "<<gmres_ctx->conv_iters<<std::endl;
             /*converged due to abs tol being satisfied*/
             gmres_ctx->convrson = GMRES_CONV_ABS;
             break;
         } else 
         if(error/error0 < rtol)  {
-            std::cout<<" rel converged at "<<gmres_ctx->conv_iters
-                     <<" rel error "<<error/error0<<std::endl;
             /*converged due to rel tol being satisfied*/
             gmres_ctx->convrson = GMRES_CONV_REL;
             break;
         } else 
         if (gmres_ctx->conv_iters > gmres_ctx->maxiters) {
-            std::cout<<" MAXIMUM ITERS reached "<<gmres_ctx->conv_iters<<std::endl;
             /*converged due to rel tol being satisfied*/
             gmres_ctx->convrson = GMRES_CONV_MAX_ITER;
             break;
@@ -501,7 +488,7 @@ void MFgmres(void (*MatDotVec) (T*, T*, unsigned int), /* matrix-vector product*
     // update x = x+c*Qkp1
     if constexpr (std::is_same<float, T>::value) {
         for(unsigned int k=0;k<cnt;k++) {
-            get_soln_d<<<1,256>>>(beta+k, x, Q+k*xdim, xdim);
+            get_soln_f<<<1,256>>>(beta+k, x, Q+k*xdim, xdim);
         }
     } else 
     if constexpr (std::is_same<double, T>::value) {
