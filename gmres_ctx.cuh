@@ -37,8 +37,10 @@ void deallocate_ram_gmres_app_ctx_f(
         float* &sn, float* &cs, float* &e1, float* &beta
 ); 
 // definition of such will allow for future coupling with PyFR
-void set_b_vector_f(float* bvec,  unsigned int bdim, unsigned int* bstrides);
-void set_b_vector_d(double* bvec, unsigned int bdim, unsigned int* bstrides);
+void set_b_vector_f(float* bvec,  float* gmresb, 
+                    unsigned int xdim, unsigned int bdim, unsigned int* bstrides);
+void set_b_vector_d(double* bvec, double* gmresb,
+                    unsigned int xdim, unsigned int bdim, unsigned int* bstrides);
 
 // passing pointer around
 template<typename T> 
@@ -66,7 +68,7 @@ struct gmres_app_ctx {
                     T* &, T* &, T* &, T* &
                  ),
                  void (*set_bvec) (
-                    T*, unsigned int, unsigned int*
+                    T*, T*, unsigned int,  unsigned int, unsigned int*
                  )
     ) {
         xdim   = dim;
@@ -104,7 +106,7 @@ struct gmres_app_ctx {
         T* &, T* &, T* &, T* &
     );
     
-    void (*set_b_vector) (T* , unsigned int , unsigned int*);
+    void (*set_b_vector) (T* , T*, unsigned int, unsigned int , unsigned int*);
 };
 
 template<typename T>

@@ -60,15 +60,15 @@ void* create_gmres_ctx(unsigned int size,
     }
 }
 
-void set_gmres_b_vector(void* gctx, void* data, unsigned int size) {
+void set_gmres_b_vector(void* gmres, void* data, unsigned int size) {
     if(size == sizeof(double)) {
-        struct gmres_app_ctx<double>* gmres_ctx = (struct gmres_app_ctx<double>*) gctx;
+        struct gmres_app_ctx<double>* gctx = (struct gmres_app_ctx<double>*) (gmres);
         double *bvec = (double*) data;
-        gmres_ctx->set_b_vector(bvec, gmres_ctx->bdim, gmres->bstrides);
+        gctx->set_b_vector(bvec,gctx->b, gctx->xdim, gctx->bdim, gctx->bstrides);
     } else {
-        struct gmres_app_ctx<float>* gmres_ctx  = (struct gmres_app_ctx<float>*) gctx;
+        struct gmres_app_ctx<float>* gctx  = (struct gmres_app_ctx<float>*) (gmres);
         float *bvec = (float*) data;
-        gmres_ctx->set_b_vector(bvec, gmres_ctx->bdim, gmres->bstrides);
+        gctx->set_b_vector(bvec,gctx->b, gctx->xdim,  gctx->bdim, gctx->bstrides);
     }
 }
 

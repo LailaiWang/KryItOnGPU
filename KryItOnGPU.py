@@ -82,7 +82,7 @@ class TestSolver(object):
         self.create(byref(self.res), c_uint(self.dsize*self.xdim))
         
         # initialize # use 0 as the initial guess
-        self.set_zeros(self.x, c_uint(self.xdim), c_uint(self.dsize))
+        self.set_ones(self.x, c_uint(self.xdim), c_uint(self.dsize))
         self.set_zeros(self.res, c_uint(self.xdim), c_uint(self.dsize))
         
     def _matdot(self):
@@ -135,6 +135,13 @@ class KryItOnGPU(object):
         self._get_gmres()
         # get the solver
         self._get_solver()
+        # self._set_b_vector
+        self._set_b_vector()
+
+        self.set_gmres_b(self.solctx.x)
+        kryit.print_data(self.solctx.x, c_uint(self.solctx.xdim), c_uint(self.solctx.dsize))
+        self.solctx.set_zeros(self.solctx.x, c_uint(self.solctx.xdim), c_uint(self.solctx.dsize))
+        kryit.print_data(self.solctx.x, c_uint(self.solctx.xdim), c_uint(self.solctx.dsize))
         
     def _create_gmres_ctx(self):
         '''
@@ -155,8 +162,15 @@ class KryItOnGPU(object):
         )
 
     def _set_b_vector(self):
-        
+        setb = kryit.set_gmres_b_vector
+        setb.argtypes = [c_void_p, c_void_p, c_uint]
+        setb.restype = None
 
+        self.set_b = setb
+    
+    def set_gmres_b(self, bvec):
+        
+        self.set_b(self.gctx, bvec, self.dsize)
 
     def _create_precon_ctx(self):
         '''
