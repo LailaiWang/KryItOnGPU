@@ -3,10 +3,20 @@
 
 #include <iostream>
 #include "cuda_runtime.h"
+#include <cmath>
+#include <math.h>
 /**
  * \fn utility function to print the data out for debugging purpose
  *
  */
+
+#define CUDA_CALL( call )               \
+{                                       \
+cudaError_t result = call;              \
+if ( cudaSuccess != result )            \
+    std::cerr << "CUDA error " << result << " in " << __FILE__ << ":" << __LINE__ << ": " << cudaGetErrorString( result ) << " (" << #call << ")" << std::endl;  \
+}
+
 
 template<typename T>
 __global__
@@ -26,11 +36,9 @@ void print_data_wrapper(T* a, unsigned int xdim) {
 }
 
 
-#define CUDA_CALL( call )               \
-{                                       \
-cudaError_t result = call;              \
-if ( cudaSuccess != result )            \
-    std::cerr << "CUDA error " << result << " in " << __FILE__ << ":" << __LINE__ << ": " << cudaGetErrorString( result ) << " (" << #call << ")" << std::endl;  \
-}
+void set_zeros_double(double*, unsigned int xdim);
+void set_zeros_float (float*,  unsigned int xdim);
+void set_ones_double (double*, unsigned int xdim);
+void set_ones_float  (float*,  unsigned int xdim);
 
 #endif

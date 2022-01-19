@@ -8,8 +8,6 @@
 #include "cuda_runtime.h"
 #include "cublas_v2.h"
 
-void (*print_on_gpu) (double*, unsigned int) = &print_data_wrapper<double>;
-// instantiate the function for debugging purpose
 int driver1() {
     
     unsigned int xdim    = 6;
@@ -56,6 +54,7 @@ int driver1() {
     return 0;
 }
 
+/*
 int driver2() {
 
     unsigned int xdim    = 200;
@@ -71,10 +70,10 @@ int driver2() {
     double *h = hvec.data();
     double *v = vvec.data();
 
-    struct gmres_app_ctx gctx(
+    struct gmres_app_ctx<double> gctx(
         xdim, kspace, 1e-10, 1e-9, 
-        &allocate_ram_gmres_app_ctx,
-        &deallocate_ram_gmres_app_ctx
+        &allocate_ram_gmres_app_ctx_d,
+        &deallocate_ram_gmres_app_ctx_d
     );
     
     gctx.allocate_ram(
@@ -89,27 +88,23 @@ int driver2() {
     double *x_d, *res_d;
     cudaMalloc((void**) &x_d,   xdim*sizeof(double));
     cudaMalloc((void**) &res_d, xdim*sizeof(double));
-    struct precon_app_ctx pctx(x_d, res_d, xdim);
+    struct precon_app_ctx<double> pctx(x_d, res_d, xdim);
     
     struct cublas_app_ctx bctx (&initialize_cublas, &finalize_cublas);
     bctx.create_cublas(&bctx.handle);
     
-    unsigned long long int ctxaddr = reinterpret_cast<unsigned long long int> (&gctx);
-    unsigned long long int ptxaddr = reinterpret_cast<unsigned long long int> (&pctx);
-    unsigned long long int btxaddr = reinterpret_cast<unsigned long long int> (&bctx);
-
     void (*fn) (double*, double*, unsigned int) = &MatDotVec_wrapper<double>;
     void (*fprecon) (void*, double*) = &MFPreconditioner<double>;
 
     void (*gmresSol) (
         void (*) (double*, double*, unsigned int),
         void (*) (void*, double*),
-        unsigned long long int,
-        unsigned long long int,
-        unsigned long long int
+        void*,
+        void*,
+        void*
     ) = &MFgmres<double>;
 
-    gmresSol(fn, fprecon, ptxaddr, ctxaddr, btxaddr);
+    gmresSol(fn, fprecon, (void *) &ptxaddr, (void *) &ctxaddr, (void *) &btxaddr);
     
     cudaMemcpy(Q, gctx.Q, xdim*(kspace+1)*sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(h, gctx.h, kspace*(kspace+1)*sizeof(double), cudaMemcpyDeviceToHost);
@@ -131,4 +126,4 @@ int driver2() {
     cudaFree(res_d);
     return 0;
 }
-
+*/

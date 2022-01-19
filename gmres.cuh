@@ -12,13 +12,8 @@
 #include "cublas_v2.h"
 #include "math.h"
 #include "util.cuh"
-
 #include "cuda_constant.cuh"
-
-
-extern void (*print_on_gpu) (double*, unsigned int);
-/*define some constants in constant variable*/
-
+#include "Python.h"
 
 __global__
 void givens_rot_d(double* h1, double* h2, double* c, double* s) {
@@ -92,7 +87,7 @@ void dot_one_d(double* a, double* b, double* c, double scal) {
 }
 
 __global__
-void dot_one_f(double* a, double* b, double* c, double scal) {
+void dot_one_f(float* a, float* b, float* c, float scal) {
     *c = (*a)*(*b)*scal;
     return;
 }
@@ -104,17 +99,6 @@ auto get_addr(unsigned long long int start, unsigned int offset) {
     return reinterpret_cast<T*> (start+sizeof(T)*offset);
 }
 
-__global__
-void set_zero_double(double* x, unsigned int xdim) {
-    unsigned int idx = blockIdx.x*blockDim.x + threadIdx.x;
-    if(idx < xdim) x[idx] = 0.0;
-}
-
-__global__
-void set_zero_float(float* x, unsigned int xdim) {
-    unsigned int idx = blockIdx.x*blockDim.x + threadIdx.x;
-    if(idx < xdim) x[idx] = 0.0f;
-}
 
 __global__
 void get_soln_d(double* wts, double* x, double* q, unsigned int xdim) {
@@ -138,13 +122,11 @@ void get_soln_f(float* wts, float* x, float* q, unsigned int xdim) {
  */
 template<typename T>
 void set_zero_wrapper(T* x, unsigned int xdim) {
-    unsigned int threads_per_block = 256;
-    unsigned int blocks = ceil(float(xdim)/threads_per_block);
     if constexpr (std::is_same<float, T>::value) {
-        set_zero_float<<<blocks, threads_per_block>>>(x, xdim);
+        set_zeros_float(x, xdim);
     } else
     if constexpr (std::is_same<double, T>::value){
-        set_zero_double<<<blocks, threads_per_block>>>(x, xdim);
+        set_zeros_double(x, xdim);
     }
 }
 
@@ -219,20 +201,19 @@ void mGPU_dot_wrapper(cublasHandle_t handle, unsigned int xdim, T* vec, T* vnorm
  *  calculations.
  */
 template<typename T>
-void MFgmres(void (*MatDotVec) (T*, T*, unsigned int), /* matrix-vector product*/
-           void (*preconditioner) (void*, double*), /* preconditioner ctx and vector to be preconditioned*/
-           unsigned long long int ptx,     /*directly passing the address*/
-           unsigned long long int ctx,
-           unsigned long long int btx
-          ) {
+void MFgmres(
+      void (*MatDotVec) (void*, void*, void*, unsigned int), /* matrix-vector product func*/
+      void (*preconditioner) (void*, void*, unsigned int), /* preconditioner func*/
+      void* solctx, /*solver context defined as provided*/
+      void* ptx,     
+      void* gtx,
+      void* btx
+    ) {
     // grab different application context
-    struct precon_app_ctx* pcon_ctx =
-        reinterpret_cast<struct precon_app_ctx*> (ptx);
-    struct gmres_app_ctx* gmres_ctx = 
-        reinterpret_cast<struct gmres_app_ctx*> (ctx);
-    struct cublas_app_ctx* blas_ctx = 
-        reinterpret_cast<struct cublas_app_ctx*> (btx);
-    
+    struct precon_app_ctx<T>* pcon_ctx = (struct precon_app_ctx<T>*) (ptx);
+    struct gmres_app_ctx<T>* gmres_ctx = (struct gmres_app_ctx<T>*) (gtx);
+    struct cublas_app_ctx* blas_ctx = (struct cublas_app_ctx*) (btx);
+
     // dimension of the problem and krylov subspace
     unsigned int xdim = gmres_ctx->xdim;
     unsigned int kspace = gmres_ctx->kspace;
@@ -275,7 +256,8 @@ void MFgmres(void (*MatDotVec) (T*, T*, unsigned int), /* matrix-vector product*
 
     RESTART_ENTRY: {
         cnt = 0;  /*no. of iterations till convergence need to reset when restart*/
-        MatDotVec(res, x, xdim);   /*first arg: output second: input*/
+        /*perform matrix vector product here*/
+        MatDotVec(solctx, (void*) res, (void*) x, xdim);   /*first arg: output second: input*/
     }
 
     /*r = b - Ax_0*/
@@ -290,7 +272,8 @@ void MFgmres(void (*MatDotVec) (T*, T*, unsigned int), /* matrix-vector product*
         cublasDaxpy(blas_ctx->handle, xdim, &P_1D, b, 1, res, 1);
         
         /*here res is the vector to be preconditioned*/
-        preconditioner((void *) ptx, res); /*apply preconditioner here*/
+        /*apply preconditioner here*/
+        //preconditioner(solctx, (void*) res, xdim); 
     }
     
     
@@ -335,9 +318,10 @@ void MFgmres(void (*MatDotVec) (T*, T*, unsigned int), /* matrix-vector product*
     }
     
     for(unsigned int k=1;k<kspace+1;k++) {
-        MatDotVec(v, Q+xdim*(k-1), xdim); 
+        /*perform matrxi vector product approximation here*/
+        MatDotVec(solctx, (void* ) v, (void*) (Q+xdim*(k-1)), xdim); 
         /*here v is the vector to be preconditioned*/
-        preconditioner((void *) ptx, v);
+        //preconditioner(solctx, v, xdim);
         for(unsigned int j=0;j<k;j++) {
             T* hjk = h+j+(k-1)*(kspace+1);
             T* Qj  = Q+xdim*j;
@@ -423,8 +407,14 @@ void MFgmres(void (*MatDotVec) (T*, T*, unsigned int), /* matrix-vector product*
         // rotate corresponding beta // since the last is 0
         // beta (k+1) = -sn(k)*beta(k)
         // beta (k  ) =  cs(k)*beta(k)
-        dot_one_d<<<1,1>>>(sn+k-1,beta+k-1,beta+k,  -1.0);
-        dot_one_d<<<1,1>>>(cs+k-1,beta+k-1,beta+k-1, 1.0);
+        if constexpr (std::is_same<double, T>::value) {
+            dot_one_d<<<1,1>>>(sn+k-1,beta+k-1,beta+k,  -1.0);
+            dot_one_d<<<1,1>>>(cs+k-1,beta+k-1,beta+k-1, 1.0);
+        } else
+        if constexpr (std::is_same<float, T>::value) {
+            dot_one_f<<<1,1>>>(sn+k-1,beta+k-1,beta+k,  -1.0);
+            dot_one_f<<<1,1>>>(cs+k-1,beta+k-1,beta+k-1, 1.0);
+        }
         // error       = abs(beta(k + 1)) / b_norm;
         error = 0.0;
         cudaMemcpy(&error, beta+k, sizeof(T), cudaMemcpyDeviceToHost);

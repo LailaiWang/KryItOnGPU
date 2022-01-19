@@ -1,9 +1,8 @@
 #include "gmres_ctx.cuh"
 #include "cuda_constant.cuh"
-#include "util.cuh"
 #include <iostream>
 
-void allocate_ram_gmres_app_ctx(
+void allocate_ram_gmres_app_ctx_d(
         double* &b,  double* &Q,  double* &h,  double* &v,
         double* &sn, double* &cs, double* &e1, double* &beta,
         unsigned int xdim, unsigned int kspace
@@ -20,9 +19,41 @@ void allocate_ram_gmres_app_ctx(
     cudaMalloc((void **) &beta, sizeof(double)*(kspace+11));
 }
     
-void deallocate_ram_gmres_app_ctx(
+void deallocate_ram_gmres_app_ctx_d(
         double* &b,  double* &Q,  double* &h,  double* &v,
         double* &sn, double* &cs, double* &e1, double* &beta
+){
+    cudaFree(b);
+    cudaFree(Q);
+    cudaFree(h);
+    cudaFree(v);
+
+    cudaFree(sn);
+    cudaFree(cs);
+    cudaFree(e1);
+    cudaFree(beta);
+}
+
+void allocate_ram_gmres_app_ctx_f(
+        float* &b,  float* &Q,  float* &h,  float* &v,
+        float* &sn, float* &cs, float* &e1, float* &beta,
+        unsigned int xdim, unsigned int kspace
+){
+    
+    cudaMalloc((void **) &b,    sizeof(float )*xdim);
+    cudaMalloc((void **) &Q,    sizeof(float )*xdim*(kspace+1));
+    cudaMalloc((void **) &h,    sizeof(float )*kspace*(kspace+1));
+    cudaMalloc((void **) &v,    sizeof(float )*xdim);
+
+    cudaMalloc((void **) &sn,   sizeof(float )*(kspace+1));
+    cudaMalloc((void **) &cs,   sizeof(float )*(kspace+1));
+    cudaMalloc((void **) &e1,   sizeof(float )*(kspace+1));
+    cudaMalloc((void **) &beta, sizeof(float )*(kspace+11));
+}
+    
+void deallocate_ram_gmres_app_ctx_f(
+        float* &b,  float* &Q,  float* &h,  float* &v,
+        float* &sn, float* &cs, float* &e1, float* &beta
 ){
     cudaFree(b);
     cudaFree(Q);
@@ -47,3 +78,12 @@ void set_ones_const() {
     CUDA_CALL(cudaMemcpyToSymbol(N_ONE_D, &dno, sizeof(double), 0, cudaMemcpyHostToDevice));
     return;
 }
+
+void set_b_vector_f(float* bvec, unsigned int d, unsigned int* strides) {
+
+}
+
+void set_b_vector_d(double* bvec, unsigned int d, unsigned int* strides) {
+
+}
+
