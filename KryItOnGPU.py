@@ -139,9 +139,7 @@ class KryItOnGPU(object):
         self._set_b_vector()
 
         self.set_gmres_b(self.solctx.x)
-        kryit.print_data(self.solctx.x, c_uint(self.solctx.xdim), c_uint(self.solctx.dsize))
         self.solctx.set_zeros(self.solctx.x, c_uint(self.solctx.xdim), c_uint(self.solctx.dsize))
-        kryit.print_data(self.solctx.x, c_uint(self.solctx.xdim), c_uint(self.solctx.dsize))
         
     def _create_gmres_ctx(self):
         '''
@@ -242,8 +240,8 @@ class KryItOnGPU(object):
         )
 
 # create the solver for testing
-testsol = TestSolver(10)
+testsol = TestSolver(15)
 # create the gmres for testing
 testgmres = KryItOnGPU(testsol)
 testgmres.solve()
-
+kryit.print_data(testsol.x, c_uint(testsol.xdim), c_uint(testsol.dsize))

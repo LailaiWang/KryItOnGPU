@@ -253,7 +253,7 @@ void MFgmres(
 
     T bnorm;
     T rnorm;
-
+    
     RESTART_ENTRY: {
         cnt = 0;  /*no. of iterations till convergence need to reset when restart*/
         /*perform matrix vector product here*/
@@ -270,12 +270,7 @@ void MFgmres(
         CUDA_CALL(cudaMemcpyFromSymbol(e1, P_ONE_D,sizeof(double), 0, cudaMemcpyDeviceToDevice);)
         cublasDscal(blas_ctx->handle, xdim, &N_1D, res, 1);
         cublasDaxpy(blas_ctx->handle, xdim, &P_1D, b, 1, res, 1);
-        
-        /*here res is the vector to be preconditioned*/
-        /*apply preconditioner here*/
-        //preconditioner(solctx, (void*) res, xdim); 
     }
-    
     
     if constexpr (std::is_same<float, T>::value) {
         cublasSnrm2(blas_ctx->handle, xdim, b,   1, &bnorm);

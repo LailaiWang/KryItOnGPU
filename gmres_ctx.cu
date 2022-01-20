@@ -86,7 +86,6 @@ void copy_to_b_d(double* bvec, double* gmresb,
     unsigned int idx = blockIdx.x*blockDim.x + threadIdx.x;
     if(idx >= xdim) return;
     gmresb[idx] = bvec[idx];
-    printf("gmres[%d] %lf\n", idx, gmresb[idx]);
 }
 
 __global__
@@ -109,7 +108,6 @@ void set_b_vector_f(float* bvec, float* gmresb,
 void set_b_vector_d(double* bvec, double* gmresb, 
                     unsigned int xdim,
                     unsigned int d, unsigned int* strides) {
-    printf("I am here\n");
     unsigned int threads_per_block = 256;
     unsigned int blocks = ceil(float(xdim)/threads_per_block);
     copy_to_b_d<<<blocks,threads_per_block>>>(bvec, gmresb, xdim, d, strides);   

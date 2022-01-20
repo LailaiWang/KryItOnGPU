@@ -64,11 +64,11 @@ void set_gmres_b_vector(void* gmres, void* data, unsigned int size) {
     if(size == sizeof(double)) {
         struct gmres_app_ctx<double>* gctx = (struct gmres_app_ctx<double>*) (gmres);
         double *bvec = (double*) data;
-        gctx->set_b_vector(bvec,gctx->b, gctx->xdim, gctx->bdim, gctx->bstrides);
+        gctx->set_b_vector(bvec, gctx->b, gctx->xdim, gctx->bdim, gctx->bstrides);
     } else {
         struct gmres_app_ctx<float>* gctx  = (struct gmres_app_ctx<float>*) (gmres);
         float *bvec = (float*) data;
-        gctx->set_b_vector(bvec,gctx->b, gctx->xdim,  gctx->bdim, gctx->bstrides);
+        gctx->set_b_vector(bvec, gctx->b, gctx->xdim,  gctx->bdim, gctx->bstrides);
     }
 }
 
@@ -116,12 +116,17 @@ void clean_precon_ctx(unsigned int size, void* input) {
 }
 
 void* create_cublas_ctx(unsigned int size) {
+    // need to launch cublas
     struct cublas_app_ctx* bctx = new cublas_app_ctx(&initialize_cublas, &finalize_cublas);
+    bctx->create_cublas(&bctx->handle);
     return (void*) bctx;
 }
 
 void clean_cublas_ctx(void* input) {
-    delete (struct cublas_app_ctx*) input;
+    // need to destroy cublas
+    struct cublas_app_ctx* bctx = (struct cublas_app_ctx*) input;
+    bctx->clean_cublas(&bctx->handle);
+    delete bctx;
     return;
 }
 

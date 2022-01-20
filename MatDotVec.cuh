@@ -8,12 +8,10 @@ void MatDotVec(T* c, T* b, unsigned int n) {
     unsigned int idx = blockIdx.x*blockDim.x + threadIdx.x;
     
     if(idx >= n) return;
-    if(idx == 0) c[idx] = 2.0*b[idx] + 1.0*b[idx+1];
+    if(idx == 0) c[idx] = 3.0*b[idx] + 2.0*b[idx+1];
     else
-    if(idx == n-1 ) c[idx] = 1.0*b[idx-1]+2.0*b[idx];
-    else c[idx] = 1.0*b[idx-1]+2.0*b[idx]+1.0*b[idx+1];
-
-    printf("c[%d] %lf b[%d] %lf\n", idx, c[idx], idx, b[idx]);
+    if(idx == n-1 ) c[idx] = 1.0*b[idx-1]+3.0*b[idx];
+    else c[idx] = 1.0*b[idx-1]+3.0*b[idx]+2.0*b[idx+1];
 }
 
 template<typename T>
