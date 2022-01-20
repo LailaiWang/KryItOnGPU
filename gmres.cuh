@@ -15,9 +15,10 @@
 #include "cuda_constant.cuh"
 #include "Python.h"
 
+template<typename T>
 __global__
-void givens_rot_d(double* h1, double* h2, double* c, double* s) {
-    double tmp = sqrt((*h1)*(*h1)+(*h2)*(*h2));
+void givens_rot(T* h1, T* h2, T* c, T* s) {
+    T tmp = sqrt((*h1)*(*h1)+(*h2)*(*h2));
     *c = *h1/tmp;
     *s = *h2/tmp;
     *h1 = (*c)*(*h1)+(*s)*(*h2);
@@ -25,9 +26,10 @@ void givens_rot_d(double* h1, double* h2, double* c, double* s) {
     return;
 }
 
+template<typename T>
 __global__
-void apply_rot_d(double* h, double* cs, double* sn, unsigned int k) {
-    double temp = 0.0f;
+void apply_rot(T* h, T* cs, T* sn, unsigned int k) {
+    T temp = 0.0f;
     for(unsigned int i=0;i<k;i++) {
         temp = cs[i]*h[i]+sn[i]*h[i+1];
         h[i+1] = -sn[i]*h[i]+cs[i]*h[i+1];
@@ -36,9 +38,10 @@ void apply_rot_d(double* h, double* cs, double* sn, unsigned int k) {
     return;
 }
 
+template<typename T>
 __global__
-void apply_rot_beta_d(double* beta, double* cs, double* sn, unsigned int k) {
-    double temp = 0.0f;
+void apply_rot_beta(T* beta, T* cs, T* sn, unsigned int k) {
+    T temp = 0.0f;
     for(unsigned int i=0;i<k;i++) {
         temp = cs[i]*beta[i]+sn[i]*beta[i+1];
         beta[i+1] = -sn[i]*beta[i]+cs[i]*beta[i+1];
@@ -47,51 +50,12 @@ void apply_rot_beta_d(double* beta, double* cs, double* sn, unsigned int k) {
     return;
 }
 
+template<typename T>
 __global__
-void apply_rot_beta_f(float* beta, float* cs, float* sn, unsigned int k) {
-    float temp = 0.0f;
-    for(unsigned int i=0;i<k;i++) {
-        temp = cs[i]*beta[i]+sn[i]*beta[i+1];
-        beta[i+1] = -sn[i]*beta[i]+cs[i]*beta[i+1];
-        beta[i  ] = temp;
-    }
-    return;
-}
-
-__global__
-void givens_rot_f(float* h1, float* h2, float* c, float* s) {
-    float tmp = sqrt((*h1)*(*h1)+(*h2)*(*h2));
-    *c = *h1/tmp;
-    *s = *h2/tmp;
-    *h1 = (*c)*(*h1)+(*s)*(*h2);
-    *h2 = 0.0f;
-    return;
-}
-
-__global__
-void apply_rot_f(float* h, float* cs, float* sn, unsigned int k) {
-    float temp = 0.0f;
-    for(unsigned int i=0;i<k;i++) {
-        temp = cs[i]*h[i]+sn[i]*h[i+1];
-        h[i+1] = -sn[i]*h[i]+cs[i]*h[i+1];
-        h[i  ] = temp;
-    }
-    return;
-}
-
-
-__global__
-void dot_one_d(double* a, double* b, double* c, double scal) {
+void dot_one(T* a, T* b, T* c, T scal) {
     *c = (*a)*(*b)*scal;
     return;
 }
-
-__global__
-void dot_one_f(float* a, float* b, float* c, float scal) {
-    *c = (*a)*(*b)*scal;
-    return;
-}
-
 
 template<typename T>
 auto get_addr(unsigned long long int start, unsigned int offset) {
@@ -99,17 +63,9 @@ auto get_addr(unsigned long long int start, unsigned int offset) {
     return reinterpret_cast<T*> (start+sizeof(T)*offset);
 }
 
-
+template<typename T>
 __global__
-void get_soln_d(double* wts, double* x, double* q, unsigned int xdim) {
-    unsigned int idx = blockIdx.x*blockDim.x + threadIdx.x;
-    if(idx >= xdim) return;
-    x[idx] += (*wts)*q[idx];
-    return;
-}
-
-__global__
-void get_soln_f(float* wts, float* x, float* q, unsigned int xdim) {
+void get_soln(T* wts, T* x, T* q, unsigned int xdim) {
     unsigned int idx = blockIdx.x*blockDim.x + threadIdx.x;
     if(idx >= xdim) return;
     x[idx] += (*wts)*q[idx];
@@ -376,40 +332,21 @@ void MFgmres(
             cublasDscal(blas_ctx->handle, xdim, &vnormi, Qkp1, 1);
         }
 
-        /*update newest rotation matrix*/
-        if constexpr (std::is_same<float, T>::value) {
-            /*apply givens rotation for first k items*/
-            /* input x <----- h0j*/
-            /* input y <----- h1j*/
-            apply_rot_f<<<1,1>>>(h+(k-1)*(kspace+1), cs, sn,k-1);
-            /*apply givens totation to last two items*/
-            givens_rot_f<<<1,1>>>(
+        /*apply givens rotation for first k items*/
+        /* input x <----- h0j*/
+        /* input y <----- h1j*/
+        apply_rot<T><<<1,1>>>(h+(k-1)*(kspace+1), cs, sn,k-1);
+        /*apply givens totation to last two items*/
+        givens_rot<T><<<1,1>>>(
                 h+k-1+(k-1)*(kspace+1), h+k+0+(k-1)*(kspace+1), cs+k-1, sn+k-1
-            );
-        } else 
-        if constexpr (std::is_same<double, T>::value) {
-            /*apply givens rotation for first k items*/
-            apply_rot_d<<<1,1>>>(h+(k-1)*(kspace+1), cs, sn,k-1);
-
-            /*apply givens totation to last two items*/
-            givens_rot_d<<<1,1>>>(
-                h+k-1+(k-1)*(kspace+1), h+k+0+(k-1)*(kspace+1), cs+k-1, sn+k-1
-            );
-
-        }
+        );
         
 
         // rotate corresponding beta // since the last is 0
         // beta (k+1) = -sn(k)*beta(k)
         // beta (k  ) =  cs(k)*beta(k)
-        if constexpr (std::is_same<double, T>::value) {
-            dot_one_d<<<1,1>>>(sn+k-1,beta+k-1,beta+k,  -1.0);
-            dot_one_d<<<1,1>>>(cs+k-1,beta+k-1,beta+k-1, 1.0);
-        } else
-        if constexpr (std::is_same<float, T>::value) {
-            dot_one_f<<<1,1>>>(sn+k-1,beta+k-1,beta+k,  -1.0);
-            dot_one_f<<<1,1>>>(cs+k-1,beta+k-1,beta+k-1, 1.0);
-        }
+        dot_one<T><<<1,1>>>(sn+k-1,beta+k-1,beta+k,  -1.0);
+        dot_one<T><<<1,1>>>(cs+k-1,beta+k-1,beta+k-1, 1.0);
         // error       = abs(beta(k + 1)) / b_norm;
         error = 0.0;
         cudaMemcpy(&error, beta+k, sizeof(T), cudaMemcpyDeviceToHost);
@@ -471,15 +408,8 @@ void MFgmres(
 
     /*after we solve the least square problem, we update x*/
     // update x = x+c*Qkp1
-    if constexpr (std::is_same<float, T>::value) {
-        for(unsigned int k=0;k<cnt;k++) {
-            get_soln_f<<<1,256>>>(beta+k, x, Q+k*xdim, xdim);
-        }
-    } else 
-    if constexpr (std::is_same<double, T>::value) {
-        for(unsigned int k=0;k<cnt;k++) {
-            get_soln_d<<<1,256>>>(beta+k, x, Q+k*xdim, xdim);
-        }
+    for(unsigned int k=0;k<cnt;k++) {
+        get_soln<T><<<1,256>>>(beta+k, x, Q+k*xdim, xdim);
     }
     
     /*since not converged */
