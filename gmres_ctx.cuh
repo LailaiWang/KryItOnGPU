@@ -47,31 +47,63 @@ template<typename T>
 struct gmres_app_ctx {
     unsigned int xdim = 0;    // dimension of the square matrix
     unsigned int kspace = 0;  // dimension of the krylov subpspace max iteration number
-
+    
     T atol=1e-11;
     T rtol=1e-10;
-
-    gmres_conv_reason convrson = GMRES_NOT_CONV;
     
+    gmres_conv_reason convrson = GMRES_NOT_CONV;
     unsigned int maxiters = 3500;
     unsigned int conv_iters = 0;
 
-    gmres_app_ctx(unsigned int dim, unsigned int space, T at, T rt,
-                 void (*allocate) (
+    unsigned int etypes; // maximum tri quad hex tet prism pyrimid
+    unsigned int soasz[2];
+    unsigned int iodim;
+    unsigned int ioshape[200];
+    unsigned int datadim;
+    unsigned int datashape[200];
+
+    gmres_app_ctx(unsigned int dim,
+                  unsigned int etypes_in,
+                  unsigned int* soasz_in,
+                  unsigned int iodim_in,
+                  unsigned int* ioshape_in,
+                  unsigned int datadim_in,
+                  unsigned int* datashape_in,
+                  unsigned int space,
+                  T at, T rt,
+                  void (*allocate) (
                     T* &, T* &, T* &, T* &,
                     T* &, T* &, T* &, T* &,
                     unsigned int,
                     unsigned int
-                 ),
-                 void (*deallocate) (
+                  ),
+                  void (*deallocate) (
                     T* &, T* &, T* &, T* &,
                     T* &, T* &, T* &, T* &
-                 ),
-                 void (*set_bvec) (
+                  ),
+                  void (*set_bvec) (
                     T*, T*, unsigned int,  unsigned int, unsigned int*
-                 )
+                  )
     ) {
-        xdim   = dim;
+        xdim   = dim; // dimension of the problem // not continuous due to alignment
+
+        etypes = etypes_in;
+
+        for(unsigned int i=0;i<2;i++) {
+            soasz[i] = soasz_in[i];
+        }
+
+        iodim = iodim_in;
+        for(unsigned int i=0;i<iodim*etypes;i++) {
+            ioshape[i] = ioshape_in[i];
+        }
+
+        datadim = datadim_in;
+        for(unsigned int i=0;i<datadim*etypes;i++) {
+            datashape[i] = datashape_in[i];
+        }
+
+
         kspace = space;
         atol   = at;
         rtol   = rt;

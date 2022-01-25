@@ -7,6 +7,12 @@
  */
 void* create_gmres_ctx(unsigned int size,
                        unsigned int dim,
+                       unsigned int etypes,   // number of element types
+                       unsigned int* soasz,
+                       unsigned int iodim,    // dim of ioshape
+                       unsigned int* ioshape,         
+                       unsigned int datadim, 
+                       unsigned int* datashape,
                        unsigned int space,
                        void* atol,
                        void* rtol
@@ -24,7 +30,9 @@ void* create_gmres_ctx(unsigned int size,
         double rt = *((double*)rtol);
         
         struct gmres_app_ctx<double>* gctx = new gmres_app_ctx<double>(
-            dim, space, at, rt,
+            dim, etypes,
+            soasz, iodim, ioshape,datadim, datashape,
+            space, at, rt,
             &allocate_ram_gmres_app_ctx_d,
             &deallocate_ram_gmres_app_ctx_d,
             &set_b_vector_d
@@ -43,7 +51,9 @@ void* create_gmres_ctx(unsigned int size,
         float at = *((float*)(atol));
         float rt = *((float*)(rtol));
         struct gmres_app_ctx<float>* gctx = new gmres_app_ctx<float>(
-            dim, space, at, rt,
+            dim, etypes,
+            soasz, iodim, ioshape,datadim, datashape,
+            space, at, rt,
             &allocate_ram_gmres_app_ctx_f,
             &deallocate_ram_gmres_app_ctx_f,
             &set_b_vector_f

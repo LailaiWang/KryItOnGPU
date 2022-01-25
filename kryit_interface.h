@@ -7,7 +7,17 @@
 #include "util.cuh"
 extern "C" {
     // provide the data type to create the instance
-    void* create_gmres_ctx(unsigned int size, unsigned int dim, unsigned int space, void* atol, void* rtol); 
+    void* create_gmres_ctx(unsigned int size,
+                           unsigned int dim,
+                           unsigned int etypes_in,
+                           unsigned int* soasz_in,    // alignment
+                           unsigned int iodim_in,
+                           unsigned int* ioshape_in,  // ioshape
+                           unsigned int datadim_in,
+                           unsigned int* datashape_in,// actual data shape
+                           unsigned int space,
+                           void* atol, 
+                           void* rtol); 
     void clean_gmres_ctx(void* input); 
     void* create_precon_ctx(unsigned int size, unsigned int dim, void* xin, void* resin);
     void clean_precon_ctx(void* input); 
