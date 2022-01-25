@@ -240,7 +240,7 @@ class KryItOnGPU(object):
         )
 
 # create the solver for testing
-testsol = TestSolver(15)
+testsol = TestSolver(250)
 # create the gmres for testing
 testgmres = KryItOnGPU(testsol)
 testgmres.solve()

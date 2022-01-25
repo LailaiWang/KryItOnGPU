@@ -8,11 +8,11 @@
 void* create_gmres_ctx(unsigned int size,
                        unsigned int dim,
                        unsigned int etypes,   // number of element types
-                       unsigned int* soasz,
+                       void* soasz_in,
                        unsigned int iodim,    // dim of ioshape
-                       unsigned int* ioshape,         
+                       void* ioshape_in,         
                        unsigned int datadim, 
-                       unsigned int* datashape,
+                       void* datashape_in,
                        unsigned int space,
                        void* atol,
                        void* rtol
@@ -24,6 +24,10 @@ void* create_gmres_ctx(unsigned int size,
     while(idebugger) {
 
     }
+    
+    unsigned int* soasz = (unsigned int*) soasz_in;
+    unsigned int* ioshape = (unsigned int*) ioshape_in;
+    unsigned int* datashape = (unsigned int*) datashape_in;
 
     if (size == sizeof(double)) {
         double at = *((double*)atol);
@@ -31,7 +35,9 @@ void* create_gmres_ctx(unsigned int size,
         
         struct gmres_app_ctx<double>* gctx = new gmres_app_ctx<double>(
             dim, etypes,
-            soasz, iodim, ioshape,datadim, datashape,
+            soasz, 
+            iodim, ioshape,
+            datadim, datashape,
             space, at, rt,
             &allocate_ram_gmres_app_ctx_d,
             &deallocate_ram_gmres_app_ctx_d,
@@ -52,7 +58,9 @@ void* create_gmres_ctx(unsigned int size,
         float rt = *((float*)(rtol));
         struct gmres_app_ctx<float>* gctx = new gmres_app_ctx<float>(
             dim, etypes,
-            soasz, iodim, ioshape,datadim, datashape,
+            soasz,
+            iodim, ioshape,
+            datadim, datashape,
             space, at, rt,
             &allocate_ram_gmres_app_ctx_f,
             &deallocate_ram_gmres_app_ctx_f,

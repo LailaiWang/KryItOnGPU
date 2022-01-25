@@ -88,19 +88,24 @@ struct gmres_app_ctx {
         xdim   = dim; // dimension of the problem // not continuous due to alignment
 
         etypes = etypes_in;
-
+    
         for(unsigned int i=0;i<2;i++) {
             soasz[i] = soasz_in[i];
+            printf("soasz[%d] %d\n", i, soasz[i]);
         }
 
         iodim = iodim_in;
+        printf("idom is %d\n", iodim);
         for(unsigned int i=0;i<iodim*etypes;i++) {
             ioshape[i] = ioshape_in[i];
+            printf("ioshape[%d] %d\n", i, ioshape[i]);
         }
 
         datadim = datadim_in;
+        printf("datadim is %d\n", datadim);
         for(unsigned int i=0;i<datadim*etypes;i++) {
             datashape[i] = datashape_in[i];
+            printf("datashape[%d] %d\n", i, datashape[i]);
         }
 
 

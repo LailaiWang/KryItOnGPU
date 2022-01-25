@@ -10,11 +10,11 @@ extern "C" {
     void* create_gmres_ctx(unsigned int size,
                            unsigned int dim,
                            unsigned int etypes_in,
-                           unsigned int* soasz_in,    // alignment
+                           void* soasz_in,    // alignment
                            unsigned int iodim_in,
-                           unsigned int* ioshape_in,  // ioshape
+                           void* ioshape_in,  // ioshape
                            unsigned int datadim_in,
-                           unsigned int* datashape_in,// actual data shape
+                           void* datashape_in,// actual data shape
                            unsigned int space,
                            void* atol, 
                            void* rtol); 
