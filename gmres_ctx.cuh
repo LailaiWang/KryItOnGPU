@@ -18,34 +18,81 @@ enum gmres_conv_reason {GMRES_NOT_CONV = 0,
 void allocate_ram_gmres_app_ctx_d(
         double* &b,  double* &Q,  double* &h,  double* &v,
         double* &sn, double* &cs, double* &e1, double* &beta,
-        unsigned int xdim, unsigned int kspace
-); 
-    
-void deallocate_ram_gmres_app_ctx_d(
-        double* &b,  double* &Q,  double* &h,  double* &v,
-        double* &sn, double* &cs, double* &e1, double* &beta
+        bool* &nonpadding,
+        unsigned long int xdim, unsigned int kspace
 );
 
 void allocate_ram_gmres_app_ctx_f(
         float* &b,  float* &Q,  float* &h,  float* &v,
         float* &sn, float* &cs, float* &e1, float* &beta,
-        unsigned int xdim, unsigned int kspace
+        bool* &nonpadding,
+        unsigned long int xdim, unsigned int kspace
 ); 
+    
+void deallocate_ram_gmres_app_ctx_d(
+        double* &b,  double* &Q,  double* &h,  double* &v,
+        double* &sn, double* &cs, double* &e1, double* &beta,
+        bool* &nonpadding
+);
+
     
 void deallocate_ram_gmres_app_ctx_f(
         float* &b,  float* &Q,  float* &h,  float* &v,
-        float* &sn, float* &cs, float* &e1, float* &beta
+        float* &sn, float* &cs, float* &e1, float* &beta,
+        bool* &nonpadding
 ); 
-// definition of such will allow for future coupling with PyFR
-void set_b_vector_f(float* bvec,  float* gmresb, 
-                    unsigned int xdim, unsigned int bdim, unsigned int* bstrides);
-void set_b_vector_d(double* bvec, double* gmresb,
-                    unsigned int xdim, unsigned int bdim, unsigned int* bstrides);
+
+void copy_data_to_native_d(
+          unsigned long long int*, // input starting address
+          unsigned long long int,  // local address
+          unsigned int, // element type
+          unsigned int, // datashape dim
+          unsigned long int * // datashape
+);
+
+void copy_data_to_native_f(
+          unsigned long long int*, // input starting address
+          unsigned long long int,  // local address
+          unsigned int, // element type
+          unsigned int, // datashape dim
+          unsigned long int * // datashape
+);
+
+void copy_data_to_user_d(
+          unsigned long long int*, // input starting address
+          unsigned long long int,  // local address
+          unsigned int, // element type
+          unsigned int, // datashape dim
+          unsigned long int * // datashape
+);
+
+void copy_data_to_user_f(
+          unsigned long long int*, // input starting address
+          unsigned long long int,  // local address
+          unsigned int, // element type
+          unsigned int, // datashape dim
+          unsigned long int * // datashape
+);
+
+void set_reg_addr_pyfr(
+    unsigned long long int*, // input
+    unsigned long long int*, // local
+    unsigned int // etype
+);
+
+void fill_nonpadding(unsigned int etype, 
+                     unsigned long int* soasz,
+                     unsigned int iodim,
+                     unsigned long int* ioshape,
+                     unsigned int datadim,
+                     unsigned long int* datashape,
+                     unsigned long int xdim,
+                     bool* nonpadding);
 
 // passing pointer around
 template<typename T> 
 struct gmres_app_ctx {
-    unsigned int xdim = 0;    // dimension of the square matrix
+    unsigned long int xdim = 0;    // dimension of the square matrix
     unsigned int kspace = 0;  // dimension of the krylov subpspace max iteration number
     
     T atol=1e-11;
@@ -56,34 +103,69 @@ struct gmres_app_ctx {
     unsigned int conv_iters = 0;
 
     unsigned int etypes; // maximum tri quad hex tet prism pyrimid
-    unsigned int soasz[2];
+    unsigned long int soasz[2];
     unsigned int iodim;
-    unsigned int ioshape[200];
+    unsigned long int ioshape[200]; // [nsp, nvar, neles]
     unsigned int datadim;
-    unsigned int datashape[200];
+    unsigned long int datashape[200]; // [nblocks, nsp, neles/nblocks/soasz, nvar, soasz]
+    
+    // define an array of bool on device
 
-    gmres_app_ctx(unsigned int dim,
+    bool* nonpadding; // add a padding value for gmres calculation, skip padding space 
+
+    unsigned long long int b_reg[10];    // starting address for b vector on PyFR side
+    unsigned long long int curr_reg[10]; // starting address for current operating space on PyFR
+
+    gmres_app_ctx(unsigned long int dim,
                   unsigned int etypes_in,
-                  unsigned int* soasz_in,
+                  unsigned long int* soasz_in,
                   unsigned int iodim_in,
-                  unsigned int* ioshape_in,
+                  unsigned long int* ioshape_in,
                   unsigned int datadim_in,
-                  unsigned int* datashape_in,
+                  unsigned long int* datashape_in,
                   unsigned int space,
                   T at, T rt,
                   void (*allocate) (
                     T* &, T* &, T* &, T* &,
                     T* &, T* &, T* &, T* &,
-                    unsigned int,
+                    bool* &,
+                    unsigned long int,
                     unsigned int
                   ),
                   void (*deallocate) (
                     T* &, T* &, T* &, T* &,
-                    T* &, T* &, T* &, T* &
+                    T* &, T* &, T* &, T* &,
+                    bool* &
                   ),
-                  void (*set_bvec) (
-                    T*, T*, unsigned int,  unsigned int, unsigned int*
+                  void (*fillpad) (
+                    unsigned int, unsigned long int*,
+                    unsigned int, unsigned long int*,
+                    unsigned int, unsigned long int*,
+                    unsigned long int, bool*
+                  ),
+
+                  void (*copy_to_nativevec)(
+                    unsigned long long int*, // input starting address
+                    unsigned long long int,  // local stress
+                    unsigned int, // element type
+                    unsigned int, // datadim
+                    unsigned long int * // datashape
+                  ),
+
+                  void (*copy_to_uservec)(
+                    unsigned long long int*, // input starting address
+                    unsigned long long int,  // local stress
+                    unsigned int, // element type
+                    unsigned int, //datadim
+                    unsigned long int * // datashape
+                  ), 
+
+                  void (*set_reg_addr_inp) (
+                    unsigned long long int*, // input
+                    unsigned long long int*, // native
+                    unsigned int// etype
                   )
+
     ) {
         xdim   = dim; // dimension of the problem // not continuous due to alignment
 
@@ -91,23 +173,20 @@ struct gmres_app_ctx {
     
         for(unsigned int i=0;i<2;i++) {
             soasz[i] = soasz_in[i];
-            printf("soasz[%d] %d\n", i, soasz[i]);
+            printf("soasz[%d] is soasz[%ld]\n", i, soasz[i]);
         }
 
         iodim = iodim_in;
-        printf("idom is %d\n", iodim);
         for(unsigned int i=0;i<iodim*etypes;i++) {
             ioshape[i] = ioshape_in[i];
-            printf("ioshape[%d] %d\n", i, ioshape[i]);
+            printf("ioshape[%d] is %ld\n", i, ioshape[i]);
         }
 
         datadim = datadim_in;
-        printf("datadim is %d\n", datadim);
         for(unsigned int i=0;i<datadim*etypes;i++) {
             datashape[i] = datashape_in[i];
-            printf("datashape[%d] %d\n", i, datashape[i]);
+            printf("datashape[%d] is %ld\n", i, datashape[i]);
         }
-
 
         kspace = space;
         atol   = at;
@@ -115,7 +194,11 @@ struct gmres_app_ctx {
 
         allocate_ram   = allocate;
         deallocate_ram = deallocate;
-        set_b_vector = set_bvec;
+
+        fill = fillpad;
+        copy_to_native = copy_to_nativevec;
+        copy_to_user   = copy_to_uservec;
+        set_reg_addr   = set_reg_addr_inp;
     };
 
     T* b; /* a copy of b values in linear system Ax=b */
@@ -133,31 +216,40 @@ struct gmres_app_ctx {
 
     void (*allocate_ram) (
         T* &, T* &, T* &, T* &,
-        T* &, T* &, T* &, T* &,
-        unsigned int,
+        T* &, T* &, T* &, T* &, bool* &,
+        unsigned long int,
         unsigned int
     );
 
     void (*deallocate_ram) (
         T* &, T* &, T* &, T* &,
-        T* &, T* &, T* &, T* &
+        T* &, T* &, T* &, T* &, bool* &
     );
     
-    void (*set_b_vector) (T* , T*, unsigned int, unsigned int , unsigned int*);
-};
+    void (*fill) (unsigned int, unsigned long int*, 
+                  unsigned int, unsigned long int*,
+                  unsigned int, unsigned long int*,
+                  unsigned long int, bool*);
 
-template<typename T>
-struct precon_app_ctx {
-    T* x;    // x stores the solution of Ax = b
-    T* res;  // a vector to store res = b - Ax_i
-    unsigned int xdim;  
-    /*these two from spatial solver*/
-    precon_app_ctx(T *xin, T *resin, unsigned int uk) {
-        x   = xin;
-        res = resin;
-        xdim = uk;
-    }
+    void (*copy_to_native)(
+          unsigned long long int*, // input starting address
+          unsigned long long int,  // local address
+          unsigned int, // element type
+          unsigned int, // datadim
+          unsigned long int * // datashape
+    );
+    void (*copy_to_user) (
+          unsigned long long int*, // input starting address
+          unsigned long long int,  // local address
+          unsigned int, // element type
+          unsigned int, // datadim
+          unsigned long int * // datashape
+    );
+    void (*set_reg_addr) (
+        unsigned long long int*, // input
+        unsigned long long int*, // local
+        unsigned int // etype
+    );
 };
-
 
 #endif

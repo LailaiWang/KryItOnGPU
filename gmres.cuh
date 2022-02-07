@@ -17,7 +17,7 @@
 
 template<typename T>
 __global__
-void givens_rot(T* h1, T* h2, T* c, T* s) {
+void givens_rot(T* __restrict__ h1, T* __restrict__ h2, T* __restrict__ c, T* __restrict__ s) {
     T tmp = sqrt((*h1)*(*h1)+(*h2)*(*h2));
     *c = *h1/tmp;
     *s = *h2/tmp;
@@ -28,7 +28,7 @@ void givens_rot(T* h1, T* h2, T* c, T* s) {
 
 template<typename T>
 __global__
-void apply_rot(T* h, T* cs, T* sn, unsigned int k) {
+void apply_rot(T* __restrict__ h, T* __restrict__ cs, T* __restrict__ sn, unsigned int k) {
     T temp = 0.0f;
     for(unsigned int i=0;i<k;i++) {
         temp = cs[i]*h[i]+sn[i]*h[i+1];
@@ -40,7 +40,7 @@ void apply_rot(T* h, T* cs, T* sn, unsigned int k) {
 
 template<typename T>
 __global__
-void apply_rot_beta(T* beta, T* cs, T* sn, unsigned int k) {
+void apply_rot_beta(T* __restrict__ beta, T* __restrict__ cs, T* __restrict__ sn, unsigned int k) {
     T temp = 0.0f;
     for(unsigned int i=0;i<k;i++) {
         temp = cs[i]*beta[i]+sn[i]*beta[i+1];
@@ -52,7 +52,7 @@ void apply_rot_beta(T* beta, T* cs, T* sn, unsigned int k) {
 
 template<typename T>
 __global__
-void dot_one(T* a, T* b, T* c, T scal) {
+void dot_one(T* __restrict__ a, T* __restrict__ b, T* __restrict__ c, T scal) {
     *c = (*a)*(*b)*scal;
     return;
 }
@@ -65,7 +65,7 @@ auto get_addr(unsigned long long int start, unsigned int offset) {
 
 template<typename T>
 __global__
-void get_soln(T* wts, T* x, T* q, unsigned int xdim) {
+void get_soln(T* __restrict__ wts, T* __restrict__ x, T* __restrict__ q, unsigned long int xdim) {
     unsigned int idx = blockIdx.x*blockDim.x + threadIdx.x;
     if(idx >= xdim) return;
     x[idx] += (*wts)*q[idx];
@@ -77,7 +77,7 @@ void get_soln(T* wts, T* x, T* q, unsigned int xdim) {
  *
  */
 template<typename T>
-void set_zero_wrapper(T* x, unsigned int xdim) {
+void set_zero_wrapper(T* x, unsigned long int xdim) {
     if constexpr (std::is_same<float, T>::value) {
         set_zeros_float(x, xdim);
     } else
@@ -88,7 +88,7 @@ void set_zero_wrapper(T* x, unsigned int xdim) {
 
 /*norm for multiple gpus*/
 template<typename T> 
-void mGPU_norm2_wrapper(cublasHandle_t handle, unsigned int xdim, T* vec, T* vnorm) {
+void mGPU_norm2_wrapper(cublasHandle_t handle, unsigned long int xdim, T* vec, T* vnorm) {
     cublasStatus_t err;
     T localnorm;
     if constexpr (std::is_same<float,T>::value) {
@@ -117,7 +117,7 @@ void mGPU_norm2_wrapper(cublasHandle_t handle, unsigned int xdim, T* vec, T* vno
 
 /*dot product for multiple gpus*/
 template<typename T>
-void mGPU_dot_wrapper(cublasHandle_t handle, unsigned int xdim, T* vec, T* vnorm) {
+void mGPU_dot_wrapper(cublasHandle_t handle, unsigned long int xdim, T* vec, T* vnorm) {
     cublasStatus_t err;
     T localnorm;
     if constexpr (std::is_same<float,T>::value) {
@@ -145,33 +145,20 @@ void mGPU_dot_wrapper(cublasHandle_t handle, unsigned int xdim, T* vec, T* vnorm
 
 /** 
  * \fn gmres function
- *  The bottomneck of gmres method is matrix-vector product
- *  We use a matrix free implementation for single GPU multiple GPU cases
- *  however, the least square problem in gmres is so tiny (especially when we have a small
- *  krylov subspace), such that
- *  cross GPU computation is not needed (would make things slower). Hence,
- *  We only use single GPU to calculate it (well each GPU can do the same 
- *  calculation simultaneously). With this being said,
- *  this only thing we need to worry about cross GPUs is norm2 calculation
- *  Other than that, everything can directly taking adcantage of local cublas 
- *  calculations.
  */
 template<typename T>
 void MFgmres(
-      void (*MatDotVec) (void*, void*, void*, unsigned int), /* matrix-vector product func*/
-      void (*preconditioner) (void*, void*, unsigned int), /* preconditioner func*/
+      void (*MatDotVec) (void*, bool), /* matrix-vector product func*/
       void* solctx, /*solver context defined as provided*/
-      void* ptx,     
       void* gtx,
       void* btx
     ) {
     // grab different application context
-    struct precon_app_ctx<T>* pcon_ctx = (struct precon_app_ctx<T>*) (ptx);
     struct gmres_app_ctx<T>* gmres_ctx = (struct gmres_app_ctx<T>*) (gtx);
     struct cublas_app_ctx* blas_ctx = (struct cublas_app_ctx*) (btx);
 
     // dimension of the problem and krylov subspace
-    unsigned int xdim = gmres_ctx->xdim;
+    unsigned long int xdim = gmres_ctx->xdim;
     unsigned int kspace = gmres_ctx->kspace;
 
     T* sn   = gmres_ctx->sn;    // dimension kspace+1
@@ -184,10 +171,6 @@ void MFgmres(
     T* h = gmres_ctx->h; // dimension (kspace+1)*kspace
     T* v = gmres_ctx->v; // dimension  xdim
 
-    
-    T* x   = pcon_ctx->x;
-    T* res = pcon_ctx->res;
-
     T atol = gmres_ctx->atol;
     T rtol = gmres_ctx->rtol;
     
@@ -195,8 +178,6 @@ void MFgmres(
     set_zero_wrapper(cs,   kspace+1);
     set_zero_wrapper(e1,   kspace+1);
     set_zero_wrapper(beta, kspace+11);
-    
-    set_zero_wrapper(x, xdim); /*initialize guess all zeros*/
     
     bool restart = false;  /*if it is restart or not*/
 
@@ -207,35 +188,31 @@ void MFgmres(
     T error  = 0.0; /*residual*/
     T error0 = 0.0; 
 
-    T bnorm;
-    T rnorm;
-    
+    T bnorm, rnorm;
+
+    /*set up the initial value*/
+    set_zero_wrapper(v,   xdim);   
+
     RESTART_ENTRY: {
+        bool init = true;
+        if(cnt != 0 ) init = false;
         cnt = 0;  /*no. of iterations till convergence need to reset when restart*/
-        /*perform matrix vector product here*/
-        MatDotVec(solctx, (void*) res, (void*) x, xdim);   /*first arg: output second: input*/
+
+        /*copy the initial guess to PyFR*/
+        gmres_ctx->copy_to_user(
+            gmrex_ctx->curr_reg, reinterpret_cast<unsigned long long int> (v), 
+            gmres_ctx->etype, gmres_ctx->datadim, gmres_ctx->datashapes
+        );
+
+        MatDotVec(solctx, init);
+        // Need update the current address to the bank in PyFR which stores the data
+        // copy from PyFR data to first col of Q
+        gmres_ctx->copy_to_native(
+            gmrex_ctx->curr_reg, reinterpret_cast<unsigned long long int> (Q), 
+            gmres_ctx->etype, gmres_ctx->datadim, gmres_ctx->datashapes
+        );
     }
 
-    /*r = b - Ax_0*/
-    if constexpr (std::is_same<float, T>::value) {
-        CUDA_CALL(cudaMemcpyFromSymbol(e1, P_ONE_F,sizeof(float), 0, cudaMemcpyDeviceToDevice);)
-        cublasSscal(blas_ctx->handle, xdim, &N_1F, res, 1);
-        cublasSaxpy(blas_ctx->handle, xdim, &P_1F, b, 1, res, 1);
-    } else 
-    if constexpr (std::is_same<double, T>::value) {
-        CUDA_CALL(cudaMemcpyFromSymbol(e1, P_ONE_D,sizeof(double), 0, cudaMemcpyDeviceToDevice);)
-        cublasDscal(blas_ctx->handle, xdim, &N_1D, res, 1);
-        cublasDaxpy(blas_ctx->handle, xdim, &P_1D, b, 1, res, 1);
-    }
-    
-    if constexpr (std::is_same<float, T>::value) {
-        cublasSnrm2(blas_ctx->handle, xdim, b,   1, &bnorm);
-        cublasSnrm2(blas_ctx->handle, xdim, res, 1, &rnorm);
-    } else
-    if constexpr (std::is_same<double, T>::value){
-        cublasDnrm2(blas_ctx->handle, xdim, b,   1, &bnorm);
-        cublasDnrm2(blas_ctx->handle, xdim, res, 1, &rnorm);
-    }
     
     error = rnorm/bnorm;
     if (restart == false ) error0 = error; /*only update error0 at the very beginning*/
@@ -247,32 +224,23 @@ void MFgmres(
         gmres_ctx->convrson = GMRES_DIV;
         return;
     }
-
-    /*Normalize res = b - Ax_0 and copy it to first col of Q*/
-    /*beta vector is the one appear in the least square problem*/
-    /*e1 is not to be changed always as [1, 0, 0, 0, ...]^T*/
-    if constexpr (std::is_same<float, T>::value) {
-        float rnormi = 1.0f/rnorm;
-        cublasScopy(blas_ctx->handle, xdim, res, 1, Q, 1);
-        cublasSscal(blas_ctx->handle, xdim, &rnormi, Q, 1);
-        // beta vector 
-        cublasScopy(blas_ctx->handle, xdim, e1, 1, beta, 1);
-        cublasSscal(blas_ctx->handle, xdim, &rnorm, beta, 1);
-    } else
-    if constexpr (std::is_same<double, T>::value){
-        double rnormi = 1.0/rnorm;
-        cublasDcopy(blas_ctx->handle, xdim, res,1, Q, 1);
-        cublasDscal(blas_ctx->handle, xdim, &rnormi, Q, 1);
-        // beta vector
-        cublasDcopy(blas_ctx->handle, xdim, e1,1, beta, 1);
-        cublasDscal(blas_ctx->handle, xdim, &rnorm, beta, 1);
-    }
+    
+    // normalize first col of Q
     
     for(unsigned int k=1;k<kspace+1;k++) {
-        /*perform matrxi vector product approximation here*/
-        MatDotVec(solctx, (void* ) v, (void*) (Q+xdim*(k-1)), xdim); 
-        /*here v is the vector to be preconditioned*/
-        //preconditioner(solctx, v, xdim);
+        /*perform matrix vector product approximation here*/
+        gmres_ctx->copy_to_user(
+            gmrex_ctx->curr_reg, reinterpret_cast<unsigned long long int> (Q+(k-1)*xdim), 
+            gmres_ctx->etype, gmres_ctx->datadim, gmres_ctx->datashapes
+        );
+
+        MatDotVec(solctx, false); 
+
+        gmres_ctx->copy_to_native(
+            gmres_ctx->idx_curr, reinterpret_cast<unsigned long long int> (v),
+            gmres_ctx->etype, gmres_ctx->datadim, gmres_ctx->datashapes
+        );
+
         for(unsigned int j=0;j<k;j++) {
             T* hjk = h+j+(k-1)*(kspace+1);
             T* Qj  = Q+xdim*j;
@@ -409,13 +377,22 @@ void MFgmres(
     /*after we solve the least square problem, we update x*/
     // update x = x+c*Qkp1
     for(unsigned int k=0;k<cnt;k++) {
-        get_soln<T><<<1,256>>>(beta+k, x, Q+k*xdim, xdim);
+        get_soln<T><<<1,256>>>(beta+k, v, Q+k*xdim, xdim);
     }
     
+    gmres_ctx->copy_to_user(
+       gmrex_ctx->curr_reg, reinterpret_cast<unsigned long long int> (v), 
+       gmres_ctx->etype, gmres_ctx->datadim, gmres_ctx->datashapes
+    );
+
     /*since not converged */
     if (restart) {
         goto RESTART_ENTRY;
     }
+    
+    // solution is stored in x
+    // copy solution for native data layout to PyFR data layout
+
 
     return;
 }

@@ -6,7 +6,7 @@
  * @author Lai Wang
  */
 void* create_gmres_ctx(unsigned int size,
-                       unsigned int dim,
+                       unsigned long int dim,
                        unsigned int etypes,   // number of element types
                        void* soasz_in,
                        unsigned int iodim,    // dim of ioshape
@@ -18,16 +18,9 @@ void* create_gmres_ctx(unsigned int size,
                        void* rtol
                       ) {
     
-    int pid = getpid();
-    printf("get current pid %d\n", pid);
-    int idebugger = 0;
-    while(idebugger) {
-
-    }
-    
-    unsigned int* soasz = (unsigned int*) soasz_in;
-    unsigned int* ioshape = (unsigned int*) ioshape_in;
-    unsigned int* datashape = (unsigned int*) datashape_in;
+    unsigned long int* soasz = (unsigned long int*) soasz_in;
+    unsigned long int* ioshape = (unsigned long int*) ioshape_in;
+    unsigned long int* datashape = (unsigned long int*) datashape_in;
 
     if (size == sizeof(double)) {
         double at = *((double*)atol);
@@ -41,15 +34,23 @@ void* create_gmres_ctx(unsigned int size,
             space, at, rt,
             &allocate_ram_gmres_app_ctx_d,
             &deallocate_ram_gmres_app_ctx_d,
-            &set_b_vector_d
+            &fill_nonpadding,
+            &copy_data_to_native_d,
+            &copy_data_to_user_d,
+            &set_reg_addr_pyfr
         );
         
         /*allocate the ram here*/
         gctx->allocate_ram(
             gctx->b,  gctx->Q,  gctx->h,  gctx->v, 
-            gctx->sn, gctx->cs, gctx->e1, gctx->beta,
+            gctx->sn, gctx->cs, gctx->e1, gctx->beta, gctx->nonpadding,
             gctx->xdim, 
             gctx->kspace
+        );
+        
+        gctx->fill(
+            gctx->etypes, gctx->soasz, gctx->iodim, gctx->ioshape,
+            gctx->datadim, gctx->datashape, gctx->xdim, gctx->nonpadding
         );
 
         return (void*) gctx;
@@ -64,31 +65,27 @@ void* create_gmres_ctx(unsigned int size,
             space, at, rt,
             &allocate_ram_gmres_app_ctx_f,
             &deallocate_ram_gmres_app_ctx_f,
-            &set_b_vector_f
+            &fill_nonpadding,
+            &copy_data_to_native_f,
+            &copy_data_to_user_f,
+            &set_reg_addr_pyfr
         );
         /*allocate the ram here*/
         gctx->allocate_ram(
             gctx->b,  gctx->Q,  gctx->h,  gctx->v, 
-            gctx->sn, gctx->cs, gctx->e1, gctx->beta,
+            gctx->sn, gctx->cs, gctx->e1, gctx->beta, gctx->nonpadding,
             gctx->xdim, 
             gctx->kspace
         );
 
+        gctx->fill(
+            gctx->etypes, gctx->soasz, gctx->iodim, gctx->ioshape,
+            gctx->datadim, gctx->datashape,  gctx->xdim, gctx->nonpadding
+        );
         return (void*) gctx;
     }
 }
 
-void set_gmres_b_vector(void* gmres, void* data, unsigned int size) {
-    if(size == sizeof(double)) {
-        struct gmres_app_ctx<double>* gctx = (struct gmres_app_ctx<double>*) (gmres);
-        double *bvec = (double*) data;
-        gctx->set_b_vector(bvec, gctx->b, gctx->xdim, gctx->bdim, gctx->bstrides);
-    } else {
-        struct gmres_app_ctx<float>* gctx  = (struct gmres_app_ctx<float>*) (gmres);
-        float *bvec = (float*) data;
-        gctx->set_b_vector(bvec, gctx->b, gctx->xdim,  gctx->bdim, gctx->bstrides);
-    }
-}
 
 void clean_gmres_ctx(unsigned int size, void* input) {
     if(size == sizeof(double)) {
@@ -96,39 +93,6 @@ void clean_gmres_ctx(unsigned int size, void* input) {
         return;
     } else if (size == sizeof(float)) {
         delete (struct gmres_app_ctx<float>*) input;
-        return;
-    }
-}
-
-void*  create_precon_ctx(unsigned int size, 
-                         unsigned int xdim, 
-                         void* xin,
-                         void* resin) {
-    if(size == sizeof(double)) {
-        // cast pointer to 
-        double* x   = (double*) (xin);
-        double* res = (double*) (resin);
-        struct precon_app_ctx<double>* pctx = new precon_app_ctx<double>(
-            x, res, xdim
-        );
-        return (void *) pctx;
-    } else if (size == sizeof(float)) {
-        // cast pointer to 
-        float* x   = (float*) (xin);
-        float* res = (float*) (resin);
-        struct precon_app_ctx<float>* pctx = new precon_app_ctx<float>(
-            x, res, xdim
-        );
-        return (void*) pctx;
-    }
-}
-
-void clean_precon_ctx(unsigned int size, void* input) {
-    if(size == sizeof(double)) { 
-        delete (struct precon_app_ctx<double>*) input;
-        return;
-    } else if (size == sizeof(float)) {
-        delete (struct precon_app_ctx<float>*) input;
         return;
     }
 }
@@ -153,9 +117,7 @@ void* gmres(unsigned int size) {
     
     if(size == sizeof(double)) {
         void (*gmresSol) (
-            void (*) (void*, void*, void*, unsigned int),
-            void (*) (void*, void*, unsigned int),
-            void*, 
+            void (*) (void*, bool), /*solv_ctx, bool*/
             void*,
             void*,
             void*
@@ -164,9 +126,7 @@ void* gmres(unsigned int size) {
         return (void*) gmresSol;
     } else if(size == sizeof(float)) {
         void (*gmresSol) (
-            void (*) (void*, void*, void*, unsigned int),
-            void (*) (void*, void*, unsigned int),
-            void*,
+            void (*) (void*, bool), /*solv_ctx, bool*/
             void*,
             void*,
             void*
@@ -177,60 +137,38 @@ void* gmres(unsigned int size) {
 
 void gmres_solve(
                  void* matdotptr, // function pointers
-                 void* preconptr, // function pointers
                  void* gmresptr,   // function pointers
                  void* solctx,    // solver context
-                 void* pctxptr,   // structure pointers
                  void* gctxptr,   // structure pointers
                  void* bctxptr    // structure pointers
                 ) {
     // cast the void pointer to the function pointer
     void (*funcdot) (
-        void*,       // solctx
-        void*,       // corresponding to B 
-        void*,       // corresponding to X
-        unsigned int // dimension of the problem
+        void*,       // solv_ctx
+        bool         // bool
     ) = ( void(*) (
             void*,     
-            void*,
-            void*,
-            unsigned int
+            bool
           )
         ) matdotptr;
     
-    void (*funcprecon) (
-        void*,
-        void*,
-        unsigned int
-    ) = ( void(*) (
-           void*,       // solctx
-           void*,       // vector to be preconditioner
-           unsigned int // dimension of the problem
-          )
-        ) preconptr;
-
-
     void (*gmresSol) (
-        void (*) (void*, void*, void*, unsigned int),
-        void (*) (void*, void*, unsigned int),
+        void (*) (void*, bool), /*solv ctx, bool*/
         void*, // solver context
-        void*, // preconditioner context
         void*, // gmres context
         void*  // cublas context
     ) = ( void (*) (
-            void (*) (void*, void*, void*, unsigned int),
-            void (*) (void*, void*, unsigned int),
-            void*,
+            void (*) (void*, bool),
             void*,
             void*,
             void*)
         ) gmresptr;
     // solve the system using gmres   
-    gmresSol(funcdot, funcprecon, solctx, pctxptr, gctxptr, bctxptr);
+    gmresSol(funcdot, solctx, gctxptr, bctxptr);
 }
 
 
-void set_zero(void* x, unsigned int xdim, unsigned int size) {
+void set_zero(void* x, unsigned long int xdim, unsigned int size) {
     if(size == sizeof(double)) {
         set_zeros_double((double*)x, xdim);
     } else {
@@ -238,7 +176,7 @@ void set_zero(void* x, unsigned int xdim, unsigned int size) {
     }
 }
 
-void set_one(void* x, unsigned int xdim, unsigned int size) {
+void set_one(void* x, unsigned long int xdim, unsigned int size) {
     if(size == sizeof(double)) {
         set_ones_double((double*)x, xdim);
     } else {
@@ -246,7 +184,7 @@ void set_one(void* x, unsigned int xdim, unsigned int size) {
     }
 }
 
-void print_data(void* x, unsigned int xdim, unsigned int size) {
+void print_data(void* x, unsigned long int xdim, unsigned int size) {
     if(size == sizeof(double)) {
         print_data_wrapper<double>((double*)x, xdim);
     } else {
@@ -255,13 +193,32 @@ void print_data(void* x, unsigned int xdim, unsigned int size) {
 
 }
 
-void (*matdot_d) ( void*, void*, unsigned int) = &MatDotVec_wrapper<double>;
-void (*matdot_f) ( void*, void*, unsigned int) = &MatDotVec_wrapper<float>;
+/*set the address for b vector*/
+void set_b_reg_addr(void* gmres,
+                    void* addr,
+                    unsigned int etype,
+                    unsigned int dsize){
+    unsigned long long int* data = (unsigned long long int *) addr;
+    if(dsize == sizeof(double)) {
+        struct gmres_app_ctx<double>* gctx = (struct gmres_app_ctx<double>*) (gmres);
+        gctx->set_reg_addr(data, gmres->b_reg, etype);
+    } else {
+        struct gmres_app_ctx<float>* gctx  = (struct gmres_app_ctx<float>*) (gmres);
+        gctx->set_reg_addr(data, gmres->b_reg, etype);
+    }
+}
 
-void  get_matdot(void* c, void* b, unsigned int xdim, unsigned int size) {
-    if(size == sizeof(double)) {
-        matdot_d(c,b,xdim);
-    } else if (size == sizeof(float)) {
-        matdot_f(c,b,xdim);
+/*set the address for current operating space*/
+void set_curr_reg_addr(void* gmres,
+                       void* addr,
+                       unsigned int etype,
+                       unsigned int dsize){
+    unsigned long long int* data = (unsigned long long int *) addr;
+    if(dsize == sizeof(double)) {
+        struct gmres_app_ctx<double>* gctx = (struct gmres_app_ctx<double>*) (gmres);
+        gctx->set_reg_addr(data, gmres->curr_reg, etype);
+    } else {
+        struct gmres_app_ctx<float>* gctx  = (struct gmres_app_ctx<float>*) (gmres);
+        gctx->set_reg_addr(data, gmres->curr_reg, etype);
     }
 }
