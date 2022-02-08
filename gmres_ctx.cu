@@ -3,13 +3,12 @@
 #include <iostream>
 
 void allocate_ram_gmres_app_ctx_d(
-        double* &b,  double* &Q,  double* &h,  double* &v,
+        double* &Q,  double* &h,  double* &v,
         double* &sn, double* &cs, double* &e1, double* &beta,
         bool* &nonpadding,
         unsigned long int xdim, unsigned int kspace
 ){
     
-    cudaMalloc((void **) &b,    sizeof(double)*xdim);
     cudaMalloc((void **) &Q,    sizeof(double)*xdim*(kspace+1));
     cudaMalloc((void **) &h,    sizeof(double)*kspace*(kspace+1));
     cudaMalloc((void **) &v,    sizeof(double)*xdim);
@@ -18,15 +17,14 @@ void allocate_ram_gmres_app_ctx_d(
     cudaMalloc((void **) &cs,   sizeof(double)*(kspace+1));
     cudaMalloc((void **) &e1,   sizeof(double)*(kspace+1));
     cudaMalloc((void **) &beta, sizeof(double)*(kspace+11));
-    cudaMalloc((void **) &beta, sizeof(bool)*xdim);
+    cudaMalloc((void **) &nonpadding, sizeof(bool)*xdim);
 }
     
 void deallocate_ram_gmres_app_ctx_d(
-        double* &b,  double* &Q,  double* &h,  double* &v,
+        double* &Q,  double* &h,  double* &v,
         double* &sn, double* &cs, double* &e1, double* &beta, 
         bool* &nonpadding
 ){
-    cudaFree(b);
     cudaFree(Q);
     cudaFree(h);
     cudaFree(v);
@@ -39,14 +37,13 @@ void deallocate_ram_gmres_app_ctx_d(
 }
 
 void allocate_ram_gmres_app_ctx_f(
-        float* &b,  float* &Q,  float* &h,  float* &v,
+        float* &Q,  float* &h,  float* &v,
         float* &sn, float* &cs, float* &e1, float* &beta,
         bool* &nonpadding,
         unsigned long int xdim, unsigned int kspace
 ){
     
 
-    cudaMalloc((void **) &b,    sizeof(float )*xdim);
     cudaMalloc((void **) &Q,    sizeof(float )*xdim*(kspace+1));
     cudaMalloc((void **) &h,    sizeof(float )*kspace*(kspace+1));
     cudaMalloc((void **) &v,    sizeof(float )*xdim);
@@ -59,10 +56,9 @@ void allocate_ram_gmres_app_ctx_f(
 }
     
 void deallocate_ram_gmres_app_ctx_f(
-        float* &b,  float* &Q,  float* &h,  float* &v,
+        float* &Q,  float* &h,  float* &v,
         float* &sn, float* &cs, float* &e1, float* &beta, bool* &nonpadding
 ){
-    cudaFree(b);
     cudaFree(Q);
     cudaFree(h);
     cudaFree(v);

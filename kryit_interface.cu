@@ -42,7 +42,7 @@ void* create_gmres_ctx(unsigned int size,
         
         /*allocate the ram here*/
         gctx->allocate_ram(
-            gctx->b,  gctx->Q,  gctx->h,  gctx->v, 
+            gctx->Q,  gctx->h,  gctx->v, 
             gctx->sn, gctx->cs, gctx->e1, gctx->beta, gctx->nonpadding,
             gctx->xdim, 
             gctx->kspace
@@ -72,7 +72,7 @@ void* create_gmres_ctx(unsigned int size,
         );
         /*allocate the ram here*/
         gctx->allocate_ram(
-            gctx->b,  gctx->Q,  gctx->h,  gctx->v, 
+            gctx->Q,  gctx->h,  gctx->v, 
             gctx->sn, gctx->cs, gctx->e1, gctx->beta, gctx->nonpadding,
             gctx->xdim, 
             gctx->kspace
@@ -201,10 +201,10 @@ void set_b_reg_addr(void* gmres,
     unsigned long long int* data = (unsigned long long int *) addr;
     if(dsize == sizeof(double)) {
         struct gmres_app_ctx<double>* gctx = (struct gmres_app_ctx<double>*) (gmres);
-        gctx->set_reg_addr(data, gmres->b_reg, etype);
+        gctx->set_reg_addr(data, gctx->b_reg, etype);
     } else {
         struct gmres_app_ctx<float>* gctx  = (struct gmres_app_ctx<float>*) (gmres);
-        gctx->set_reg_addr(data, gmres->b_reg, etype);
+        gctx->set_reg_addr(data, gctx->b_reg, etype);
     }
 }
 
@@ -216,9 +216,9 @@ void set_curr_reg_addr(void* gmres,
     unsigned long long int* data = (unsigned long long int *) addr;
     if(dsize == sizeof(double)) {
         struct gmres_app_ctx<double>* gctx = (struct gmres_app_ctx<double>*) (gmres);
-        gctx->set_reg_addr(data, gmres->curr_reg, etype);
+        gctx->set_reg_addr(data, gctx->curr_reg, etype);
     } else {
         struct gmres_app_ctx<float>* gctx  = (struct gmres_app_ctx<float>*) (gmres);
-        gctx->set_reg_addr(data, gmres->curr_reg, etype);
+        gctx->set_reg_addr(data, gctx->curr_reg, etype);
     }
 }

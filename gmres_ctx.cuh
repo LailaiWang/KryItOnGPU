@@ -16,28 +16,28 @@ enum gmres_conv_reason {GMRES_NOT_CONV = 0,
 
 /*define some functions to manage to ram*/
 void allocate_ram_gmres_app_ctx_d(
-        double* &b,  double* &Q,  double* &h,  double* &v,
+        double* &Q,  double* &h,  double* &v,
         double* &sn, double* &cs, double* &e1, double* &beta,
         bool* &nonpadding,
         unsigned long int xdim, unsigned int kspace
 );
 
 void allocate_ram_gmres_app_ctx_f(
-        float* &b,  float* &Q,  float* &h,  float* &v,
+        float* &Q,  float* &h,  float* &v,
         float* &sn, float* &cs, float* &e1, float* &beta,
         bool* &nonpadding,
         unsigned long int xdim, unsigned int kspace
 ); 
     
 void deallocate_ram_gmres_app_ctx_d(
-        double* &b,  double* &Q,  double* &h,  double* &v,
+        double* &Q,  double* &h,  double* &v,
         double* &sn, double* &cs, double* &e1, double* &beta,
         bool* &nonpadding
 );
 
     
 void deallocate_ram_gmres_app_ctx_f(
-        float* &b,  float* &Q,  float* &h,  float* &v,
+        float* &Q,  float* &h,  float* &v,
         float* &sn, float* &cs, float* &e1, float* &beta,
         bool* &nonpadding
 ); 
@@ -126,14 +126,14 @@ struct gmres_app_ctx {
                   unsigned int space,
                   T at, T rt,
                   void (*allocate) (
-                    T* &, T* &, T* &, T* &,
+                    T* &, T* &, T* &,
                     T* &, T* &, T* &, T* &,
                     bool* &,
                     unsigned long int,
                     unsigned int
                   ),
                   void (*deallocate) (
-                    T* &, T* &, T* &, T* &,
+                    T* &, T* &, T* &,
                     T* &, T* &, T* &, T* &,
                     bool* &
                   ),
@@ -215,14 +215,14 @@ struct gmres_app_ctx {
     unsigned int *bstrides;
 
     void (*allocate_ram) (
-        T* &, T* &, T* &, T* &,
+        T* &, T* &, T* &,
         T* &, T* &, T* &, T* &, bool* &,
         unsigned long int,
         unsigned int
     );
 
     void (*deallocate_ram) (
-        T* &, T* &, T* &, T* &,
+        T* &, T* &, T* &,
         T* &, T* &, T* &, T* &, bool* &
     );
     

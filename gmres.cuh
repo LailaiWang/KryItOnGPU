@@ -166,7 +166,6 @@ void MFgmres(
     T* e1   = gmres_ctx->e1;    // dimension kspace+1
     T* beta = gmres_ctx->beta;  // dimension kspace+11
     
-    T* b = gmres_ctx->b; // dimension xdim Ax = b 
     T* Q = gmres_ctx->Q; // dimension xdim*(kspace+1)
     T* h = gmres_ctx->h; // dimension (kspace+1)*kspace
     T* v = gmres_ctx->v; // dimension  xdim
@@ -200,16 +199,16 @@ void MFgmres(
 
         /*copy the initial guess to PyFR*/
         gmres_ctx->copy_to_user(
-            gmrex_ctx->curr_reg, reinterpret_cast<unsigned long long int> (v), 
-            gmres_ctx->etype, gmres_ctx->datadim, gmres_ctx->datashapes
+            gmres_ctx->curr_reg, reinterpret_cast<unsigned long long int> (v), 
+            gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape
         );
 
         MatDotVec(solctx, init);
         // Need update the current address to the bank in PyFR which stores the data
         // copy from PyFR data to first col of Q
         gmres_ctx->copy_to_native(
-            gmrex_ctx->curr_reg, reinterpret_cast<unsigned long long int> (Q), 
-            gmres_ctx->etype, gmres_ctx->datadim, gmres_ctx->datashapes
+            gmres_ctx->curr_reg, reinterpret_cast<unsigned long long int> (Q), 
+            gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape
         );
     }
 
@@ -230,15 +229,15 @@ void MFgmres(
     for(unsigned int k=1;k<kspace+1;k++) {
         /*perform matrix vector product approximation here*/
         gmres_ctx->copy_to_user(
-            gmrex_ctx->curr_reg, reinterpret_cast<unsigned long long int> (Q+(k-1)*xdim), 
-            gmres_ctx->etype, gmres_ctx->datadim, gmres_ctx->datashapes
+            gmres_ctx->curr_reg, reinterpret_cast<unsigned long long int> (Q+(k-1)*xdim), 
+            gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape
         );
 
         MatDotVec(solctx, false); 
 
         gmres_ctx->copy_to_native(
-            gmres_ctx->idx_curr, reinterpret_cast<unsigned long long int> (v),
-            gmres_ctx->etype, gmres_ctx->datadim, gmres_ctx->datashapes
+            gmres_ctx->curr_reg, reinterpret_cast<unsigned long long int> (v),
+            gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape
         );
 
         for(unsigned int j=0;j<k;j++) {
@@ -381,8 +380,8 @@ void MFgmres(
     }
     
     gmres_ctx->copy_to_user(
-       gmrex_ctx->curr_reg, reinterpret_cast<unsigned long long int> (v), 
-       gmres_ctx->etype, gmres_ctx->datadim, gmres_ctx->datashapes
+       gmres_ctx->curr_reg, reinterpret_cast<unsigned long long int> (v), 
+       gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape
     );
 
     /*since not converged */
