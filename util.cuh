@@ -28,7 +28,7 @@ void print_data(T* __restrict__ a, unsigned long int xdim) {
 
 
 template<typename T> 
-void print_data_wrapper(T* __restrict__ a, unsigned long int xdim) {
+void print_data_wrapper(T* a, unsigned long int xdim) {
     unsigned int threads_per_block = 256;
     unsigned long int blocks = ceil(float(xdim)/threads_per_block);
     print_data<T> <<<blocks, threads_per_block>>>(a, xdim);

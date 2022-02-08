@@ -266,6 +266,7 @@ void set_reg_addr_pyfr(
 ) {
     for(unsigned int ie = 0; ie<etype;ie++) {
         output[ie] = input[ie];
+        printf("current reg address is %ld\n", output[ie]);
     }
 }
 

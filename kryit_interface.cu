@@ -222,3 +222,23 @@ void set_curr_reg_addr(void* gmres,
         gctx->set_reg_addr(data, gctx->curr_reg, etype);
     }
 }
+
+void check_b_reg_data(void* gmres, unsigned int ne, unsigned int len, unsigned int dsize) {
+    if(dsize == sizeof(double)) {
+        struct gmres_app_ctx<double>* gctx = (struct gmres_app_ctx<double>*) (gmres);
+        print_data_wrapper<double> (reinterpret_cast<double*>(gctx->b_reg[ne]), len);   
+    } else {
+        struct gmres_app_ctx<float>* gctx  = (struct gmres_app_ctx<float>*) (gmres);
+        print_data_wrapper<float> (reinterpret_cast<float*>(gctx->b_reg[ne]), len); 
+    }
+}
+
+void check_curr_reg_data(void* gmres, unsigned int ne, unsigned int len, unsigned int dsize) {
+    if(dsize == sizeof(double)) {
+        struct gmres_app_ctx<double>* gctx = (struct gmres_app_ctx<double>*) (gmres);
+        print_data_wrapper<double> (reinterpret_cast<double*>(gctx->curr_reg[ne]), len);   
+    } else {
+        struct gmres_app_ctx<float>* gctx  = (struct gmres_app_ctx<float>*) (gmres);
+        print_data_wrapper<float> (reinterpret_cast<float*>(gctx->curr_reg[ne]), len); 
+    }
+}

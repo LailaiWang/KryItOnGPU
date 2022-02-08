@@ -38,6 +38,8 @@ extern "C" {
     // function to set the address of the pmg src bank in PyFR
     void set_b_reg_addr(void* gctx, void* addr, unsigned int etype, unsigned int dsize);
     void set_curr_reg_addr(void* gctx, void* addr, unsigned int etype, unsigned int dsize);
+    void check_b_reg_data(void* gctx, unsigned int ne, unsigned int len, unsigned int dsize);
+    void check_curr_reg_data(void* gctx, unsigned int ne, unsigned int len, unsigned int dsize);
 }
 
 #endif
