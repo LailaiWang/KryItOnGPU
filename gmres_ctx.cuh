@@ -4,7 +4,11 @@
 #include "cuda_runtime.h"
 #include "util.cuh"
 
-
+#include "mpi.h"
+#include "mpi-ext.h"
+#if defined(MPIX_CUDA_AWARE_SUPPORT)
+#include "mpi-ext.h"
+#endif
 void set_ones_const();
 
 enum gmres_conv_reason {GMRES_NOT_CONV = 0,
@@ -92,6 +96,10 @@ void fill_nonpadding(unsigned int etype,
 // passing pointer around
 template<typename T> 
 struct gmres_app_ctx {
+    
+    MPI_Comm mpicomm;
+    unsigned int nranks;
+
     unsigned long int xdim = 0;    // dimension of the square matrix
     unsigned int kspace = 0;  // dimension of the krylov subpspace max iteration number
     
@@ -116,7 +124,9 @@ struct gmres_app_ctx {
     unsigned long long int b_reg[10];    // starting address for b vector on PyFR side
     unsigned long long int curr_reg[10]; // starting address for current operating space on PyFR
 
-    gmres_app_ctx(unsigned long int dim,
+    gmres_app_ctx(MPI_Comm mpicom_in,
+                  unsigned int nranks_in,
+                  unsigned long int dim,
                   unsigned int etypes_in,
                   unsigned long int* soasz_in,
                   unsigned int iodim_in,
@@ -167,8 +177,9 @@ struct gmres_app_ctx {
                   )
 
     ) {
+        mpicomm = mpicom_in;
+        nranks = nranks_in;
         xdim   = dim; // dimension of the problem // not continuous due to alignment
-
         etypes = etypes_in;
     
         for(unsigned int i=0;i<2;i++) {

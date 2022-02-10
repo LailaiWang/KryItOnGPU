@@ -4,9 +4,18 @@
 #include "gmres_ctx.cuh"
 #include "cublas_ctx.cuh"
 #include "util.cuh"
+
+#include "mpi.h"
+#include "mpi-ext.h"
+#if defined(MPIX_CUDA_AWARE_SUPPORT)
+#include "mpi-ext.h"
+#endif
+
 extern "C" {
     // provide the data type to create the instance
-    void* create_gmres_ctx(unsigned int size,
+    void* create_gmres_ctx(MPI_Comm mpicomm,
+                           unsigned int nranks,
+                           unsigned int size,
                            unsigned long int dim,
                            unsigned int etypes_in,
                            void* soasz_in,    // alignment
@@ -40,6 +49,8 @@ extern "C" {
     void set_curr_reg_addr(void* gctx, void* addr, unsigned int etype, unsigned int dsize);
     void check_b_reg_data(void* gctx, unsigned int ne, unsigned int len, unsigned int dsize);
     void check_curr_reg_data(void* gctx, unsigned int ne, unsigned int len, unsigned int dsize);
+    void dot_b_reg(void* gmres, void* cublas, unsigned int dsize); 
+    void dot_c_reg(void* gmres, void* cublas, unsigned int dsize); 
 }
 
 #endif

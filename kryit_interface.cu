@@ -5,7 +5,9 @@
 /* \fn function to create the gmres context
  * @author Lai Wang
  */
-void* create_gmres_ctx(unsigned int size,
+void* create_gmres_ctx(MPI_Comm mpicomm,
+                       unsigned int nranks,
+                       unsigned int size,
                        unsigned long int dim,
                        unsigned int etypes,   // number of element types
                        void* soasz_in,
@@ -26,7 +28,21 @@ void* create_gmres_ctx(unsigned int size,
         double at = *((double*)atol);
         double rt = *((double*)rtol);
         
+        // testing mpi_common_world
+        int size, rank;
+        char pname[MPI_MAX_PROCESSOR_NAME]; int len;
+        if (mpicomm == MPI_COMM_NULL) {
+            printf("You passed MPI_COMM_NULL !!!\n");
+        }
+        MPI_Comm_size(mpicomm, &size);
+        MPI_Comm_rank(mpicomm, &rank);
+        MPI_Get_processor_name(pname, &len);
+        pname[len] = 0;
+        printf("Hello, World! I am process %d of %d on %s.\n",
+                rank, size, pname);
+
         struct gmres_app_ctx<double>* gctx = new gmres_app_ctx<double>(
+            mpicomm, nranks,
             dim, etypes,
             soasz, 
             iodim, ioshape,
@@ -58,6 +74,7 @@ void* create_gmres_ctx(unsigned int size,
         float at = *((float*)(atol));
         float rt = *((float*)(rtol));
         struct gmres_app_ctx<float>* gctx = new gmres_app_ctx<float>(
+            mpicomm, nranks,
             dim, etypes,
             soasz,
             iodim, ioshape,
@@ -240,5 +257,31 @@ void check_curr_reg_data(void* gmres, unsigned int ne, unsigned int len, unsigne
     } else {
         struct gmres_app_ctx<float>* gctx  = (struct gmres_app_ctx<float>*) (gmres);
         print_data_wrapper<float> (reinterpret_cast<float*>(gctx->curr_reg[ne]), len); 
+    }
+}
+
+void dot_c_reg(void* gmres, void* cublas, unsigned int dsize) {
+    struct cublas_app_ctx* bctx = (struct cublas_app_ctx*) (cublas);
+    if(dsize == sizeof(double)) {
+        double dotproduct = 0.0;
+        mGPU_dot_creg_wrapper<double>(gmres, &dotproduct, bctx->handle);
+        printf("inner product is %lf\n", dotproduct);
+    } else {
+        float dotproduct = 0.0;
+        mGPU_dot_creg_wrapper<float>(gmres, &dotproduct, bctx->handle);
+        printf("inner product is %f\n", dotproduct);
+    }
+}
+
+void dot_b_reg(void* gmres, void* cublas, unsigned int dsize) {
+    struct cublas_app_ctx* bctx = (struct cublas_app_ctx*) (cublas);
+    if(dsize == sizeof(double)) {
+        double dotproduct = 0.0;
+        mGPU_dot_breg_wrapper<double>(gmres, &dotproduct, bctx->handle);
+        printf("inner product is %lf\n", dotproduct);
+    } else {
+        float dotproduct = 0.0;
+        mGPU_dot_breg_wrapper<float>(gmres, &dotproduct, bctx->handle);
+        printf("inner product is %f\n", dotproduct);
     }
 }

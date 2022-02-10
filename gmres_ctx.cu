@@ -135,14 +135,6 @@ void fill_nonpadding(unsigned int etype,
                                            i4*stride4] = false;
 
                                 }
-
-                                printf("is padding %d\n",
-                                    hnopad[i0*stride0 +
-                                           i1*stride1 +
-                                           i2*stride2 +
-                                           i3*stride3 +
-                                           i4*stride4]
-                                );
                             }
                         }
                     }

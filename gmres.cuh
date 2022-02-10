@@ -15,6 +15,12 @@
 #include "cuda_constant.cuh"
 #include "Python.h"
 
+#include "mpi.h"
+#include "mpi-ext.h"
+#if defined(MPIX_CUDA_AWARE_SUPPORT)
+#include "mpi-ext.h"
+#endif
+
 template<typename T>
 __global__
 void givens_rot(T* __restrict__ h1, T* __restrict__ h2, T* __restrict__ c, T* __restrict__ s) {
@@ -86,19 +92,17 @@ void set_zero_wrapper(T* x, unsigned long int xdim) {
     }
 }
 
-/*norm for multiple gpus*/
 template<typename T> 
-void mGPU_norm2_wrapper(cublasHandle_t handle, unsigned long int xdim, T* vec, T* vnorm) {
-    cublasStatus_t err;
+void mGPU_norm2_wrapper(cublasHandle_t handle, unsigned long int xdim, T* vec, T* vnorm, MPI_Comm comm) {
     T localnorm;
     if constexpr (std::is_same<float,T>::value) {
-        err = cublasSdot(handle, xdim,vec, 1, vec, 1, &localnorm);
+        cublasSdot(handle, xdim,vec, 1, vec, 1, &localnorm);
     } else 
     if constexpr (std::is_same<double, T>:: value) {
-        err = cublasDdot(handle, xdim,vec, 1, vec, 1, &localnorm);
+        cublasDdot(handle, xdim,vec, 1, vec, 1, &localnorm);
     }
-#ifdef _MPI
-    MPI_datatype dtype = MPI_DATATYPE_NULL;
+
+    MPI_Datatype dtype = MPI_DATATYPE_NULL;
 
     if constexpr (std::is_same<float, T>::value) {
         dtype = MPI_FLOAT;
@@ -107,27 +111,22 @@ void mGPU_norm2_wrapper(cublasHandle_t handle, unsigned long int xdim, T* vec, T
         dtype = MPI_DOUBLE;
     } 
     // sum value into bnorm[1]
-    MPI_Allreduce(vnorm, &localnorm, 1, dtype, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(vnorm, &localnorm, 1, dtype, MPI_SUM, comm);
     *vnorm = std::sqrt(*vnorm);
-#else
-    *vnorm = std::sqrt(localnorm);
-#endif
     return;
 }
 
-/*dot product for multiple gpus*/
 template<typename T>
-void mGPU_dot_wrapper(cublasHandle_t handle, unsigned long int xdim, T* vec, T* vnorm) {
-    cublasStatus_t err;
+void mGPU_dot_wrapper(cublasHandle_t handle, unsigned long int xdim, T* vec, T* vnorm, MPI_Comm comm) {
     T localnorm;
     if constexpr (std::is_same<float,T>::value) {
-        err = cublasSdot(handle, xdim,vec, 1, vec, 1, &localnorm);
+        cublasSdot(handle, xdim,vec, 1, vec, 1, &localnorm);
     } else 
     if constexpr (std::is_same<double, T>:: value) {
-        err = cublasDdot(handle, xdim,vec, 1, vec, 1, &localnorm);
+        cublasDdot(handle, xdim,vec, 1, vec, 1, &localnorm);
     }
-#ifdef _MPI
-    MPI_datatype dtype = MPI_DATATYPE_NULL;
+
+    MPI_Datatype dtype = MPI_DATATYPE_NULL;
 
     if constexpr (std::is_same<float, T>::value) {
         dtype = MPI_FLOAT;
@@ -135,12 +134,85 @@ void mGPU_dot_wrapper(cublasHandle_t handle, unsigned long int xdim, T* vec, T* 
     if constexpr (std::is_same<double, T>::value){
         dtype = MPI_DOUBLE;
     } 
-    // sum value into bnorm[1]
-    MPI_Allreduce(vnorm, &localnorm, 1, dtype, MPI_SUM, MPI_COMM_WORLD);
-#else
-    *vnorm = localnorm;
-#endif
+    MPI_Allreduce(vnorm, &localnorm, 1, dtype, MPI_SUM, comm);
     return;
+}
+
+/*wrapper to compute the norm of discontinuous data on user side*/
+template<typename T>
+void mGPU_dot_breg_wrapper(void* gctx, T* dotval, cublasHandle_t handle) {
+    struct gmres_app_ctx<T>* gmres_ctx = (struct gmres_app_ctx<T>*) (gctx);
+    unsigned int etype = gmres_ctx->etypes;
+    unsigned int datadim = gmres_ctx->datadim;
+    T sum = 0;
+    for(unsigned int ie=0;ie<etype;ie++) {
+        unsigned long int dimpertype = 1;
+        for(unsigned int id=0;id<datadim;id++) {
+            dimpertype *= gmres_ctx->datashape[ie*datadim+id];
+        }
+        
+        T* b = reinterpret_cast<T*> (gmres_ctx->b_reg[ie]);
+        
+        T localnorm = 0;
+        if constexpr (std::is_same<float,T>::value) {
+            cublasSdot(handle, dimpertype, b, 1, b, 1, &localnorm);
+        } else 
+        if constexpr (std::is_same<double, T>:: value) {
+            cublasDdot(handle, dimpertype, b, 1, b, 1, &localnorm);
+        }
+        sum += localnorm;
+    }
+
+    MPI_Datatype dtype = MPI_DATATYPE_NULL;
+    if constexpr (std::is_same<float, T>::value) {
+        dtype = MPI_FLOAT;
+    } else 
+    if constexpr (std::is_same<double, T>::value){
+        dtype = MPI_DOUBLE;
+    } 
+    MPI_Allreduce(dotval, &sum, 1, dtype, MPI_SUM, gmres_ctx->mpicomm);
+    *dotval = sum; 
+    return;
+
+}
+
+/*wrapper to compute the norm of discontinuous data on user side*/
+template<typename T>
+void mGPU_dot_creg_wrapper(void* gctx, T* dotval, cublasHandle_t handle) {
+    struct gmres_app_ctx<T>* gmres_ctx = (struct gmres_app_ctx<T>*) (gctx);
+    unsigned int etype = gmres_ctx->etypes;
+    unsigned int datadim = gmres_ctx->datadim;
+    T sum = 0;
+    for(unsigned int ie=0;ie<etype;ie++) {
+        unsigned long int dimpertype = 1;
+        for(unsigned int id=0;id<datadim;id++) {
+            dimpertype *= gmres_ctx->datashape[ie*datadim+id];
+        }
+        
+        T* b = reinterpret_cast<T*> (gmres_ctx->curr_reg[ie]);
+        
+        T localnorm = 0;
+        if constexpr (std::is_same<float,T>::value) {
+            cublasSdot(handle, dimpertype, b, 1, b, 1, &localnorm);
+        } else 
+        if constexpr (std::is_same<double, T>:: value) {
+            cublasDdot(handle, dimpertype, b, 1, b, 1, &localnorm);
+        }
+        sum += localnorm;
+    }
+
+    MPI_Datatype dtype = MPI_DATATYPE_NULL;
+
+    if constexpr (std::is_same<float, T>::value) {
+        dtype = MPI_FLOAT;
+    } else 
+    if constexpr (std::is_same<double, T>::value){
+        dtype = MPI_DOUBLE;
+    } 
+    MPI_Allreduce(dotval, &sum, 1, dtype, MPI_SUM, gmres_ctx->mpicomm);
+    *dotval = sum; 
+    return;
+
 }
 
 /** 
@@ -210,6 +282,9 @@ void MFgmres(
             gmres_ctx->curr_reg, reinterpret_cast<unsigned long long int> (Q), 
             gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape
         );
+        
+        // compute the norm of b - Ax
+        mGPU_norm2_wrapper(blas_ctx->handle, xdim, Q, &rnorm, gmres_ctx->mpicomm);
     }
 
     
