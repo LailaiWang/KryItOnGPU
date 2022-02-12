@@ -111,7 +111,7 @@ void mGPU_norm2_wrapper(cublasHandle_t handle, unsigned long int xdim, T* vec, T
         dtype = MPI_DOUBLE;
     } 
     // sum value into bnorm[1]
-    MPI_Allreduce(vnorm, &localnorm, 1, dtype, MPI_SUM, comm);
+    MPI_Allreduce(&localnorm, vnorm, 1, dtype, MPI_SUM, comm);
     *vnorm = std::sqrt(*vnorm);
     return;
 }
@@ -134,7 +134,7 @@ void mGPU_dot_wrapper(cublasHandle_t handle, unsigned long int xdim, T* vec, T* 
     if constexpr (std::is_same<double, T>::value){
         dtype = MPI_DOUBLE;
     } 
-    MPI_Allreduce(vnorm, &localnorm, 1, dtype, MPI_SUM, comm);
+    MPI_Allreduce(&localnorm, vnorm, 1, dtype, MPI_SUM, comm);
     return;
 }
 
@@ -160,6 +160,7 @@ void mGPU_dot_breg_wrapper(void* gctx, T* dotval, cublasHandle_t handle) {
         if constexpr (std::is_same<double, T>:: value) {
             cublasDdot(handle, dimpertype, b, 1, b, 1, &localnorm);
         }
+
         sum += localnorm;
     }
 
@@ -170,8 +171,7 @@ void mGPU_dot_breg_wrapper(void* gctx, T* dotval, cublasHandle_t handle) {
     if constexpr (std::is_same<double, T>::value){
         dtype = MPI_DOUBLE;
     } 
-    MPI_Allreduce(dotval, &sum, 1, dtype, MPI_SUM, gmres_ctx->mpicomm);
-    *dotval = sum; 
+    MPI_Allreduce(&sum, dotval, 1, dtype, MPI_SUM, gmres_ctx->mpicomm);
     return;
 
 }
@@ -198,6 +198,7 @@ void mGPU_dot_creg_wrapper(void* gctx, T* dotval, cublasHandle_t handle) {
         if constexpr (std::is_same<double, T>:: value) {
             cublasDdot(handle, dimpertype, b, 1, b, 1, &localnorm);
         }
+
         sum += localnorm;
     }
 
@@ -209,10 +210,8 @@ void mGPU_dot_creg_wrapper(void* gctx, T* dotval, cublasHandle_t handle) {
     if constexpr (std::is_same<double, T>::value){
         dtype = MPI_DOUBLE;
     } 
-    MPI_Allreduce(dotval, &sum, 1, dtype, MPI_SUM, gmres_ctx->mpicomm);
-    *dotval = sum; 
+    MPI_Allreduce(&sum, dotval, 1, dtype, MPI_SUM, gmres_ctx->mpicomm);
     return;
-
 }
 
 /** 
