@@ -2,73 +2,6 @@
 #include "cuda_constant.cuh"
 #include <iostream>
 
-void allocate_ram_gmres_app_ctx_d(
-        double* &Q,  double* &h,  double* &v,
-        double* &sn, double* &cs, double* &e1, double* &beta,
-        bool* &nonpadding,
-        unsigned long int xdim, unsigned int kspace
-){
-    
-    cudaMalloc((void **) &Q,    sizeof(double)*xdim*(kspace+1));
-    cudaMalloc((void **) &h,    sizeof(double)*kspace*(kspace+1));
-    cudaMalloc((void **) &v,    sizeof(double)*xdim);
-
-    cudaMalloc((void **) &sn,   sizeof(double)*(kspace+1));
-    cudaMalloc((void **) &cs,   sizeof(double)*(kspace+1));
-    cudaMalloc((void **) &e1,   sizeof(double)*(kspace+1));
-    cudaMalloc((void **) &beta, sizeof(double)*(kspace+11));
-    cudaMalloc((void **) &nonpadding, sizeof(bool)*xdim);
-}
-    
-void deallocate_ram_gmres_app_ctx_d(
-        double* &Q,  double* &h,  double* &v,
-        double* &sn, double* &cs, double* &e1, double* &beta, 
-        bool* &nonpadding
-){
-    cudaFree(Q);
-    cudaFree(h);
-    cudaFree(v);
-
-    cudaFree(sn);
-    cudaFree(cs);
-    cudaFree(e1);
-    cudaFree(beta);
-    cudaFree(nonpadding);
-}
-
-void allocate_ram_gmres_app_ctx_f(
-        float* &Q,  float* &h,  float* &v,
-        float* &sn, float* &cs, float* &e1, float* &beta,
-        bool* &nonpadding,
-        unsigned long int xdim, unsigned int kspace
-){
-    
-
-    cudaMalloc((void **) &Q,    sizeof(float )*xdim*(kspace+1));
-    cudaMalloc((void **) &h,    sizeof(float )*kspace*(kspace+1));
-    cudaMalloc((void **) &v,    sizeof(float )*xdim);
-
-    cudaMalloc((void **) &sn,   sizeof(float )*(kspace+1));
-    cudaMalloc((void **) &cs,   sizeof(float )*(kspace+1));
-    cudaMalloc((void **) &e1,   sizeof(float )*(kspace+1));
-    cudaMalloc((void **) &beta, sizeof(float )*(kspace+11));
-    cudaMalloc((void **) &nonpadding, sizeof(bool)*xdim);
-}
-    
-void deallocate_ram_gmres_app_ctx_f(
-        float* &Q,  float* &h,  float* &v,
-        float* &sn, float* &cs, float* &e1, float* &beta, bool* &nonpadding
-){
-    cudaFree(Q);
-    cudaFree(h);
-    cudaFree(v);
-
-    cudaFree(sn);
-    cudaFree(cs);
-    cudaFree(e1);
-    cudaFree(beta);
-    cudaFree(nonpadding);
-}
 
 void set_ones_const() {
     float  fno = -1.0;
@@ -151,104 +84,6 @@ void fill_nonpadding(unsigned int etype,
     free(hnopad);
 }
 
-void copy_data_to_native_d(
-          unsigned long long int* startingAddr, // input starting address
-          unsigned long long int localAddr,  // local address
-          unsigned int etype, // element type
-          unsigned int datadim, // dimension of the datashape
-          unsigned long int *datashapes // datashape
-) {
-    
-    // Data on PyFR side for each element type are not necessarily contiguous
-    // Data on native gmres side are contiguous
-    double* local = (double*) (localAddr);
-
-    unsigned long int esize[etype+1];
-    esize[0] = 0;
-    for(unsigned int ie=0;ie<etype;ie++) {
-        esize[ie+1] = 1;
-        for(unsigned int idm=0;idm<datadim;idm++) {
-            esize[ie+1] *= datashapes[ie*datadim+idm];
-        }
-    }
-
-    for(unsigned int ie=0;ie<etype;ie++) {
-        double* estart = reinterpret_cast<double*> (startingAddr[ie]);
-        unsigned long int offset = 0;
-        for(unsigned int k=0;k<=ie;k++) {
-            offset += esize[k];
-        }
-
-        CUDA_CALL(
-            cudaMemcpy(
-                local+offset, estart,
-                sizeof(double)*esize[ie+1], cudaMemcpyDeviceToDevice
-           )
-        );
-    }
-
-}
-
-void copy_data_to_native_f(
-          unsigned long long int* startingAddr, // input starting address
-          unsigned long long int localAddr,  // local address
-          unsigned int etype, // element type
-          unsigned int datadim,
-          unsigned long int * datashapes // datashape
-){
-
-
-
-
-}
-
-void copy_data_to_user_d(
-          unsigned long long int* startingAddr, // input starting address
-          unsigned long long int localAddr,  // local address
-          unsigned int etype, // element type
-          unsigned int datadim, 
-          unsigned long int * datashapes// datashape
-){
-
-    // Data on PyFR side for each element type are not necessarily contiguous
-    // Data on native gmres side are contiguous
-    double* local = (double*) (localAddr);
-    unsigned long int esize[etype+1];
-    esize[0] = 0;
-    for(unsigned int ie=0;ie<etype;ie++) {
-        esize[ie+1] = 1;
-        for(unsigned int idm=0;idm<datadim;idm++) {
-            esize[ie+1] *= datashapes[ie*datadim+idm];
-        }
-    }
-    
-
-    for(unsigned int ie=0;ie<etype;ie++) {
-        double* estart = reinterpret_cast<double*> (startingAddr[ie]);
-        unsigned long int offset = 0;
-        for(unsigned int k=0;k<=ie;k++) {
-            offset += esize[k];
-        }
-
-        CUDA_CALL(
-            cudaMemcpy(
-                estart, local+offset,
-                sizeof(double)*esize[ie+1], cudaMemcpyDeviceToDevice
-            )
-        );
-    }
-}
-
-void copy_data_to_user_f(
-          unsigned long long int* startingAddr, // input starting address
-          unsigned long long int localAddr,  // local address
-          unsigned int etype, // element type
-          unsigned int datadim,
-          unsigned long int *datashapes // datashape
-){
-
-
-}
 
 /*setting the address of b vector on PyFR side*/
 void set_reg_addr_pyfr(
@@ -258,7 +93,6 @@ void set_reg_addr_pyfr(
 ) {
     for(unsigned int ie = 0; ie<etype;ie++) {
         output[ie] = input[ie];
-        printf("current reg address is %lld\n", output[ie]);
     }
 }
 

@@ -9,74 +9,49 @@
 #if defined(MPIX_CUDA_AWARE_SUPPORT)
 #include "mpi-ext.h"
 #endif
-void set_ones_const();
 
+template<typename T>
+void allocate_ram_gmres_app_ctx(
+        T* &Q,  T* &h,  T* &v,
+        T* &sn, T* &cs, T* &e1, T* &beta,
+        bool* &nonpadding,
+        unsigned long int xdim, unsigned int kspace
+){
+    
+    cudaMalloc((void **) &Q,    sizeof(T)*xdim*(kspace+1));
+    cudaMalloc((void **) &h,    sizeof(T)*kspace*(kspace+1));
+    cudaMalloc((void **) &v,    sizeof(T)*xdim);
+
+    cudaMalloc((void **) &sn,   sizeof(T)*(kspace+1));
+    cudaMalloc((void **) &cs,   sizeof(T)*(kspace+1));
+    cudaMalloc((void **) &e1,   sizeof(T)*(kspace+1));
+    cudaMalloc((void **) &beta, sizeof(T)*(kspace+11));
+    cudaMalloc((void **) &nonpadding, sizeof(bool)*xdim);
+}
+
+template<typename T>
+void deallocate_ram_gmres_app_ctx(
+        T* &Q,  T* &h,  T* &v,
+        T* &sn, T* &cs, T* &e1, T* &beta, 
+        bool* &nonpadding
+){
+    cudaFree(Q);
+    cudaFree(h);
+    cudaFree(v);
+
+    cudaFree(sn);
+    cudaFree(cs);
+    cudaFree(e1);
+    cudaFree(beta);
+    cudaFree(nonpadding);
+}
+
+void set_ones_const();
 enum gmres_conv_reason {GMRES_NOT_CONV = 0,
                         GMRES_CONV_ABS = 1,
                         GMRES_CONV_REL = 2,
                         GMRES_CONV_MAX_ITER = 3,
                         GMRES_DIV=-1};
-
-
-/*define some functions to manage to ram*/
-void allocate_ram_gmres_app_ctx_d(
-        double* &Q,  double* &h,  double* &v,
-        double* &sn, double* &cs, double* &e1, double* &beta,
-        bool* &nonpadding,
-        unsigned long int xdim, unsigned int kspace
-);
-
-void allocate_ram_gmres_app_ctx_f(
-        float* &Q,  float* &h,  float* &v,
-        float* &sn, float* &cs, float* &e1, float* &beta,
-        bool* &nonpadding,
-        unsigned long int xdim, unsigned int kspace
-); 
-    
-void deallocate_ram_gmres_app_ctx_d(
-        double* &Q,  double* &h,  double* &v,
-        double* &sn, double* &cs, double* &e1, double* &beta,
-        bool* &nonpadding
-);
-
-    
-void deallocate_ram_gmres_app_ctx_f(
-        float* &Q,  float* &h,  float* &v,
-        float* &sn, float* &cs, float* &e1, float* &beta,
-        bool* &nonpadding
-); 
-
-void copy_data_to_native_d(
-          unsigned long long int*, // input starting address
-          unsigned long long int,  // local address
-          unsigned int, // element type
-          unsigned int, // datashape dim
-          unsigned long int * // datashape
-);
-
-void copy_data_to_native_f(
-          unsigned long long int*, // input starting address
-          unsigned long long int,  // local address
-          unsigned int, // element type
-          unsigned int, // datashape dim
-          unsigned long int * // datashape
-);
-
-void copy_data_to_user_d(
-          unsigned long long int*, // input starting address
-          unsigned long long int,  // local address
-          unsigned int, // element type
-          unsigned int, // datashape dim
-          unsigned long int * // datashape
-);
-
-void copy_data_to_user_f(
-          unsigned long long int*, // input starting address
-          unsigned long long int,  // local address
-          unsigned int, // element type
-          unsigned int, // datashape dim
-          unsigned long int * // datashape
-);
 
 void set_reg_addr_pyfr(
     unsigned long long int*, // input
@@ -184,19 +159,16 @@ struct gmres_app_ctx {
     
         for(unsigned int i=0;i<2;i++) {
             soasz[i] = soasz_in[i];
-            printf("soasz[%d] is soasz[%ld]\n", i, soasz[i]);
         }
 
         iodim = iodim_in;
         for(unsigned int i=0;i<iodim*etypes;i++) {
             ioshape[i] = ioshape_in[i];
-            printf("ioshape[%d] is %ld\n", i, ioshape[i]);
         }
 
         datadim = datadim_in;
         for(unsigned int i=0;i<datadim*etypes;i++) {
             datashape[i] = datashape_in[i];
-            printf("datashape[%d] is %ld\n", i, datashape[i]);
         }
 
         kspace = space;
@@ -245,21 +217,21 @@ struct gmres_app_ctx {
     void (*copy_to_native)(
           unsigned long long int*, // input starting address
           unsigned long long int,  // local address
-          unsigned int, // element type
-          unsigned int, // datadim
-          unsigned long int * // datashape
+          unsigned int,            // element type
+          unsigned int,            // datadim
+          unsigned long int *      // datashape
     );
     void (*copy_to_user) (
           unsigned long long int*, // input starting address
           unsigned long long int,  // local address
-          unsigned int, // element type
-          unsigned int, // datadim
-          unsigned long int * // datashape
+          unsigned int,            // element type
+          unsigned int,            // datadim
+          unsigned long int *      // datashape
     );
     void (*set_reg_addr) (
         unsigned long long int*, // input
         unsigned long long int*, // local
-        unsigned int // etype
+        unsigned int             // etype
     );
 };
 

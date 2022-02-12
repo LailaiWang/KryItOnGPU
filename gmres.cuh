@@ -281,13 +281,14 @@ void MFgmres(
         if(cnt != 0 ) init = false;
         cnt = 0;  /*no. of iterations till convergence need to reset when restart*/
 
-        /*copy the initial guess to PyFR*/
+        /*copy the initial guess to the current reg bank in PyFR*/
         gmres_ctx->copy_to_user(
             gmres_ctx->curr_reg, reinterpret_cast<unsigned long long int> (v), 
             gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape
         );
         
-        /*for right preconditioning, the ||b-Ax|| is minimized*/
+        /*For right preconditioning, the ||b-Ax|| is minimized*/
+        /*Initial step, b-Ax is calculated */
         MatDotVec(solctx, init);
 
         gmres_ctx->copy_to_native(

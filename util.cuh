@@ -36,6 +36,83 @@ void print_data_wrapper(T* a, unsigned long int xdim) {
 }
 
 
+template<typename T>
+void copy_data_to_native(
+          unsigned long long int* startingAddr, // input starting address
+          unsigned long long int localAddr,  // local address
+          unsigned int etype, // element type
+          unsigned int datadim, // dimension of the datashape
+          unsigned long int *datashapes // datashape
+) {
+    
+    // Data on PyFR side for each element type are not necessarily contiguous
+    // Data on native gmres side are contiguous
+    T* local = (T*) (localAddr);
+
+    unsigned long int esize[etype+1];
+    esize[0] = 0;
+    for(unsigned int ie=0;ie<etype;ie++) {
+        esize[ie+1] = 1;
+        for(unsigned int idm=0;idm<datadim;idm++) {
+            esize[ie+1] *= datashapes[ie*datadim+idm];
+        }
+    }
+
+    for(unsigned int ie=0;ie<etype;ie++) {
+        double* estart = reinterpret_cast<double*> (startingAddr[ie]);
+        unsigned long int offset = 0;
+        for(unsigned int k=0;k<=ie;k++) {
+            offset += esize[k];
+        }
+
+        CUDA_CALL(
+            cudaMemcpy(
+                local+offset, estart,
+                sizeof(T)*esize[ie+1], cudaMemcpyDeviceToDevice
+           )
+        );
+    }
+
+}
+
+template<typename T>
+void copy_data_to_user(
+          unsigned long long int* startingAddr, // input starting address
+          unsigned long long int localAddr,  // local address
+          unsigned int etype, // element type
+          unsigned int datadim, 
+          unsigned long int * datashapes// datashape
+){
+    
+    // cast to T* pointer
+    T* local = (T*) (localAddr);
+    unsigned long int esize[etype+1];
+    esize[0] = 0;
+    for(unsigned int ie=0;ie<etype;ie++) {
+        esize[ie+1] = 1;
+        for(unsigned int idm=0;idm<datadim;idm++) {
+            esize[ie+1] *= datashapes[ie*datadim+idm];
+        }
+    }
+    
+
+    for(unsigned int ie=0;ie<etype;ie++) {
+        double* estart = reinterpret_cast<double*> (startingAddr[ie]);
+        unsigned long int offset = 0;
+        for(unsigned int k=0;k<=ie;k++) {
+            offset += esize[k];
+        }
+
+        CUDA_CALL(
+            cudaMemcpy(
+                estart, local+offset,
+                sizeof(double)*esize[ie+1], cudaMemcpyDeviceToDevice
+            )
+        );
+    }
+}
+
+
 void set_zeros_double(double*, unsigned long int xdim);
 void set_zeros_float (float*,  unsigned long int xdim);
 void set_ones_double (double*, unsigned long int xdim);

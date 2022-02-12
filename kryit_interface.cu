@@ -47,11 +47,11 @@ void* create_gmres_ctx(MPI_Comm mpicomm,
             iodim, ioshape,
             datadim, datashape,
             space, at, rt,
-            &allocate_ram_gmres_app_ctx_d,
-            &deallocate_ram_gmres_app_ctx_d,
+            &allocate_ram_gmres_app_ctx<double>,
+            &deallocate_ram_gmres_app_ctx<double>,
             &fill_nonpadding,
-            &copy_data_to_native_d,
-            &copy_data_to_user_d,
+            &copy_data_to_native<double>,
+            &copy_data_to_user<double>,
             &set_reg_addr_pyfr
         );
         
@@ -79,11 +79,11 @@ void* create_gmres_ctx(MPI_Comm mpicomm,
             iodim, ioshape,
             datadim, datashape,
             space, at, rt,
-            &allocate_ram_gmres_app_ctx_f,
-            &deallocate_ram_gmres_app_ctx_f,
+            &allocate_ram_gmres_app_ctx<float>,
+            &deallocate_ram_gmres_app_ctx<float>,
             &fill_nonpadding,
-            &copy_data_to_native_f,
-            &copy_data_to_user_f,
+            &copy_data_to_native<float>,
+            &copy_data_to_user<float>,
             &set_reg_addr_pyfr
         );
         /*allocate the ram here*/
