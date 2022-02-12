@@ -100,6 +100,7 @@ void* create_gmres_ctx(MPI_Comm mpicomm,
         );
         return (void*) gctx;
     }
+    return (void*) NULL; /*something went wrong return NULL*/
 }
 
 
@@ -111,6 +112,7 @@ void clean_gmres_ctx(unsigned int size, void* input) {
         delete (struct gmres_app_ctx<float>*) input;
         return;
     }
+    return;
 }
 
 void* create_cublas_ctx(
@@ -120,11 +122,12 @@ void* create_cublas_ctx(
     void* stream_comp_1,
     void* stream_copy_1) {
     // cast the pointer
+    
     cudaStream_t comp_stream_0 = (cudaStream_t) stream_comp_0;
     cudaStream_t copy_stream_0 = (cudaStream_t) stream_copy_0;
     cudaStream_t comp_stream_1 = (cudaStream_t) stream_comp_1;
     cudaStream_t copy_stream_1 = (cudaStream_t) stream_copy_1;
-
+    
     // need to launch cublas
     struct cublas_app_ctx* bctx = 
         new cublas_app_ctx(
@@ -135,6 +138,12 @@ void* create_cublas_ctx(
             &initialize_cublas,
             &finalize_cublas);
     bctx->create_cublas(bctx->handle);
+    // for each handle assign a stream to it
+    cublasSetStream(bctx->handle[0], bctx->comp_stream_0);
+    cublasSetStream(bctx->handle[1], bctx->copy_stream_0);
+    cublasSetStream(bctx->handle[2], bctx->comp_stream_1);
+    cublasSetStream(bctx->handle[3], bctx->copy_stream_1);
+
     return (void*) bctx;
 }
 
@@ -167,6 +176,8 @@ void* gmres(unsigned int size) {
         ) = &MFgmres<float>;
         return (void* ) gmresSol;
     }
+
+    return (void*) NULL; /*something went wrong return NULL*/
 }
 
 void gmres_solve(

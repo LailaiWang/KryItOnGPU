@@ -97,8 +97,8 @@ void fill_nonpadding(unsigned int etype,
     // datashape is [nblocks, nupts, nparr//(nblocks*soasz), nvar,soasz]
     bool* hnopad = (bool*) malloc(sizeof(bool)*xdim);
     
-    unsigned long int isz = soasz[0];
-    unsigned long int csz = soasz[1];
+    //unsigned long int isz = soasz[0];
+    //unsigned long int csz = soasz[1];
 
     if(datadim == 5) {
         for(unsigned int ie = 0; ie<etype;ie++) {
@@ -258,7 +258,7 @@ void set_reg_addr_pyfr(
 ) {
     for(unsigned int ie = 0; ie<etype;ie++) {
         output[ie] = input[ie];
-        printf("current reg address is %ld\n", output[ie]);
+        printf("current reg address is %lld\n", output[ie]);
     }
 }
 

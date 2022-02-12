@@ -72,7 +72,7 @@ auto get_addr(unsigned long long int start, unsigned int offset) {
 template<typename T>
 __global__
 void get_soln(T* __restrict__ wts, T* __restrict__ x, T* __restrict__ q, unsigned long int xdim) {
-    unsigned int idx = blockIdx.x*blockDim.x + threadIdx.x;
+    unsigned long int idx = blockIdx.x*blockDim.x + threadIdx.x;
     if(idx >= xdim) return;
     x[idx] += (*wts)*q[idx];
     return;
@@ -93,7 +93,11 @@ void set_zero_wrapper(T* x, unsigned long int xdim) {
 }
 
 template<typename T> 
-void mGPU_norm2_wrapper(cublasHandle_t *handle, unsigned long int xdim, T* vec, T* vnorm, MPI_Comm comm) {
+void mGPU_norm2_wrapper(cublasHandle_t *handle,
+                        unsigned long int xdim,
+                        T* vec,
+                        T* vnorm,
+                        MPI_Comm comm) {
     T localnorm;
     if constexpr (std::is_same<float,T>::value) {
         cublasSdot(handle[0], xdim,vec, 1, vec, 1, &localnorm);
@@ -117,7 +121,11 @@ void mGPU_norm2_wrapper(cublasHandle_t *handle, unsigned long int xdim, T* vec, 
 }
 
 template<typename T>
-void mGPU_dot_wrapper(cublasHandle_t *handle, unsigned long int xdim, T* vec, T* vnorm, MPI_Comm comm) {
+void mGPU_dot_wrapper(cublasHandle_t *handle, 
+                      unsigned long int xdim,
+                      T* vec,
+                      T* vdot,
+                      MPI_Comm comm) {
     T localnorm;
     if constexpr (std::is_same<float,T>::value) {
         cublasSdot(handle[0], xdim,vec, 1, vec, 1, &localnorm);
@@ -134,7 +142,7 @@ void mGPU_dot_wrapper(cublasHandle_t *handle, unsigned long int xdim, T* vec, T*
     if constexpr (std::is_same<double, T>::value){
         dtype = MPI_DOUBLE;
     } 
-    MPI_Allreduce(&localnorm, vnorm, 1, dtype, MPI_SUM, comm);
+    MPI_Allreduce(&localnorm, vdot, 1, dtype, MPI_SUM, comm);
     return;
 }
 
@@ -163,6 +171,9 @@ void mGPU_dot_breg_wrapper(void* gctx, T* dotval, cublasHandle_t *handle) {
 
         sum += localnorm;
     }
+    
+    cudaStream_t streamId;
+    cublasGetStream(handle[0], &streamId);
 
     MPI_Datatype dtype = MPI_DATATYPE_NULL;
     if constexpr (std::is_same<float, T>::value) {
@@ -216,6 +227,8 @@ void mGPU_dot_creg_wrapper(void* gctx, T* dotval, cublasHandle_t *handle) {
 
 /** 
  * \fn gmres function
+ * MatDotVec is from PyFR, we use a right preconditioning technique.
+ * Right preconditioning does not change the norm we are  trying to minimise.
  */
 template<typename T>
 void MFgmres(
@@ -273,10 +286,10 @@ void MFgmres(
             gmres_ctx->curr_reg, reinterpret_cast<unsigned long long int> (v), 
             gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape
         );
-
+        
+        /*for right preconditioning, the ||b-Ax|| is minimized*/
         MatDotVec(solctx, init);
-        // Need update the current address to the bank in PyFR which stores the data
-        // copy from PyFR data to first col of Q
+
         gmres_ctx->copy_to_native(
             gmres_ctx->curr_reg, reinterpret_cast<unsigned long long int> (Q), 
             gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape

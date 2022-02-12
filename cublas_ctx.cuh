@@ -38,11 +38,6 @@ struct cublas_app_ctx {
         create_cublas = creat;
         clean_cublas  = clean;
 
-        // for each handle assign a stream to it
-        cublasSetStream(handle[0], comp_stream_0);
-        cublasSetStream(handle[1], copy_stream_0);
-        cublasSetStream(handle[2], comp_stream_1);
-        cublasSetStream(handle[3], copy_stream_1);
     }
 
     void (*create_cublas) (cublasHandle_t* );
