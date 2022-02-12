@@ -26,8 +26,15 @@ extern "C" {
                            unsigned int space,
                            void* atol, 
                            void* rtol); 
-    void clean_gmres_ctx(void* input); 
-    void* create_cublas_ctx(unsigned int size); 
+    void clean_gmres_ctx(void* input);
+
+    // passing all PyFR's streams into Krylov it
+    void* create_cublas_ctx(
+        unsigned int size,
+        void* stream_comp_0, void* stream_copy_0,
+        void* stream_comp_1, void* stream_copy_1
+    ); 
+
     void clean_cublas_ctx(void* input); 
     void* gmres(unsigned int size);
 

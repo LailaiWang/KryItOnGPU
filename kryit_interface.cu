@@ -38,8 +38,7 @@ void* create_gmres_ctx(MPI_Comm mpicomm,
         MPI_Comm_rank(mpicomm, &rank);
         MPI_Get_processor_name(pname, &len);
         pname[len] = 0;
-        printf("Hello, World! I am process %d of %d on %s.\n",
-                rank, size, pname);
+        printf("Hello, World! I am process %d of %d on %s.\n", rank, size, pname);
 
         struct gmres_app_ctx<double>* gctx = new gmres_app_ctx<double>(
             mpicomm, nranks,
@@ -114,17 +113,35 @@ void clean_gmres_ctx(unsigned int size, void* input) {
     }
 }
 
-void* create_cublas_ctx(unsigned int size) {
+void* create_cublas_ctx(
+    unsigned int size,
+    void* stream_comp_0,
+    void* stream_copy_0,
+    void* stream_comp_1,
+    void* stream_copy_1) {
+    // cast the pointer
+    cudaStream_t comp_stream_0 = (cudaStream_t) stream_comp_0;
+    cudaStream_t copy_stream_0 = (cudaStream_t) stream_copy_0;
+    cudaStream_t comp_stream_1 = (cudaStream_t) stream_comp_1;
+    cudaStream_t copy_stream_1 = (cudaStream_t) stream_copy_1;
+
     // need to launch cublas
-    struct cublas_app_ctx* bctx = new cublas_app_ctx(&initialize_cublas, &finalize_cublas);
-    bctx->create_cublas(&bctx->handle);
+    struct cublas_app_ctx* bctx = 
+        new cublas_app_ctx(
+            comp_stream_0,
+            copy_stream_0,
+            comp_stream_1,
+            copy_stream_1,
+            &initialize_cublas,
+            &finalize_cublas);
+    bctx->create_cublas(bctx->handle);
     return (void*) bctx;
 }
 
 void clean_cublas_ctx(void* input) {
     // need to destroy cublas
     struct cublas_app_ctx* bctx = (struct cublas_app_ctx*) input;
-    bctx->clean_cublas(&bctx->handle);
+    bctx->clean_cublas(bctx->handle);
     delete bctx;
     return;
 }

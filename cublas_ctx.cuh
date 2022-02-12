@@ -8,14 +8,41 @@ void initialize_cublas(cublasHandle_t* handle);
 void finalize_cublas(cublasHandle_t* handle);
 
 struct cublas_app_ctx {
-    cublasHandle_t handle;
     
-    /* constructor using standalone functions to initialize function 
-     * pointers
-     */
-    cublas_app_ctx(void (*creat) (cublasHandle_t*), void (*clean) (cublasHandle_t*)) {
+    /*create four handles*/
+    cublasHandle_t handle[4];
+    
+    /*streams for first queue in PyFR*/
+    cudaStream_t comp_stream_0;
+    cudaStream_t copy_stream_0;
+
+    /*streams for second queue in PyFR*/
+    cudaStream_t comp_stream_1;
+    cudaStream_t copy_stream_1;
+    
+    cublas_app_ctx(
+            cudaStream_t stream_comp_0,
+            cudaStream_t stream_copy_0,
+            cudaStream_t stream_comp_1,
+            cudaStream_t stream_copy_1,
+            void (*creat) (cublasHandle_t*),
+            void (*clean) (cublasHandle_t*)
+    ) {
+        
+        comp_stream_0 = stream_comp_0;
+        copy_stream_0 = stream_copy_0;
+
+        comp_stream_1 = stream_comp_1;
+        copy_stream_1 = stream_copy_1;
+
         create_cublas = creat;
         clean_cublas  = clean;
+
+        // for each handle assign a stream to it
+        cublasSetStream(handle[0], comp_stream_0);
+        cublasSetStream(handle[1], copy_stream_0);
+        cublasSetStream(handle[2], comp_stream_1);
+        cublasSetStream(handle[3], copy_stream_1);
     }
 
     void (*create_cublas) (cublasHandle_t* );

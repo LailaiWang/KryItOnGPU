@@ -93,13 +93,13 @@ void set_zero_wrapper(T* x, unsigned long int xdim) {
 }
 
 template<typename T> 
-void mGPU_norm2_wrapper(cublasHandle_t handle, unsigned long int xdim, T* vec, T* vnorm, MPI_Comm comm) {
+void mGPU_norm2_wrapper(cublasHandle_t *handle, unsigned long int xdim, T* vec, T* vnorm, MPI_Comm comm) {
     T localnorm;
     if constexpr (std::is_same<float,T>::value) {
-        cublasSdot(handle, xdim,vec, 1, vec, 1, &localnorm);
+        cublasSdot(handle[0], xdim,vec, 1, vec, 1, &localnorm);
     } else 
     if constexpr (std::is_same<double, T>:: value) {
-        cublasDdot(handle, xdim,vec, 1, vec, 1, &localnorm);
+        cublasDdot(handle[0], xdim,vec, 1, vec, 1, &localnorm);
     }
 
     MPI_Datatype dtype = MPI_DATATYPE_NULL;
@@ -117,13 +117,13 @@ void mGPU_norm2_wrapper(cublasHandle_t handle, unsigned long int xdim, T* vec, T
 }
 
 template<typename T>
-void mGPU_dot_wrapper(cublasHandle_t handle, unsigned long int xdim, T* vec, T* vnorm, MPI_Comm comm) {
+void mGPU_dot_wrapper(cublasHandle_t *handle, unsigned long int xdim, T* vec, T* vnorm, MPI_Comm comm) {
     T localnorm;
     if constexpr (std::is_same<float,T>::value) {
-        cublasSdot(handle, xdim,vec, 1, vec, 1, &localnorm);
+        cublasSdot(handle[0], xdim,vec, 1, vec, 1, &localnorm);
     } else 
     if constexpr (std::is_same<double, T>:: value) {
-        cublasDdot(handle, xdim,vec, 1, vec, 1, &localnorm);
+        cublasDdot(handle[0], xdim,vec, 1, vec, 1, &localnorm);
     }
 
     MPI_Datatype dtype = MPI_DATATYPE_NULL;
@@ -140,7 +140,7 @@ void mGPU_dot_wrapper(cublasHandle_t handle, unsigned long int xdim, T* vec, T* 
 
 /*wrapper to compute the norm of discontinuous data on user side*/
 template<typename T>
-void mGPU_dot_breg_wrapper(void* gctx, T* dotval, cublasHandle_t handle) {
+void mGPU_dot_breg_wrapper(void* gctx, T* dotval, cublasHandle_t *handle) {
     struct gmres_app_ctx<T>* gmres_ctx = (struct gmres_app_ctx<T>*) (gctx);
     unsigned int etype = gmres_ctx->etypes;
     unsigned int datadim = gmres_ctx->datadim;
@@ -155,10 +155,10 @@ void mGPU_dot_breg_wrapper(void* gctx, T* dotval, cublasHandle_t handle) {
         
         T localnorm = 0;
         if constexpr (std::is_same<float,T>::value) {
-            cublasSdot(handle, dimpertype, b, 1, b, 1, &localnorm);
+            cublasSdot(handle[0], dimpertype, b, 1, b, 1, &localnorm);
         } else 
         if constexpr (std::is_same<double, T>:: value) {
-            cublasDdot(handle, dimpertype, b, 1, b, 1, &localnorm);
+            cublasDdot(handle[0], dimpertype, b, 1, b, 1, &localnorm);
         }
 
         sum += localnorm;
@@ -178,7 +178,7 @@ void mGPU_dot_breg_wrapper(void* gctx, T* dotval, cublasHandle_t handle) {
 
 /*wrapper to compute the norm of discontinuous data on user side*/
 template<typename T>
-void mGPU_dot_creg_wrapper(void* gctx, T* dotval, cublasHandle_t handle) {
+void mGPU_dot_creg_wrapper(void* gctx, T* dotval, cublasHandle_t *handle) {
     struct gmres_app_ctx<T>* gmres_ctx = (struct gmres_app_ctx<T>*) (gctx);
     unsigned int etype = gmres_ctx->etypes;
     unsigned int datadim = gmres_ctx->datadim;
@@ -193,10 +193,10 @@ void mGPU_dot_creg_wrapper(void* gctx, T* dotval, cublasHandle_t handle) {
         
         T localnorm = 0;
         if constexpr (std::is_same<float,T>::value) {
-            cublasSdot(handle, dimpertype, b, 1, b, 1, &localnorm);
+            cublasSdot(handle[0], dimpertype, b, 1, b, 1, &localnorm);
         } else 
         if constexpr (std::is_same<double, T>:: value) {
-            cublasDdot(handle, dimpertype, b, 1, b, 1, &localnorm);
+            cublasDdot(handle[0], dimpertype, b, 1, b, 1, &localnorm);
         }
 
         sum += localnorm;
@@ -321,21 +321,21 @@ void MFgmres(
             if constexpr (std::is_same<float, T>::value) {
                 float htmp = 0.0f;
                 // hjk = dot(v, Q)
-                cublasSdot(blas_ctx->handle, xdim, v, 1, Qj, 1, &htmp);
+                cublasSdot(blas_ctx->handle[0], xdim, v, 1, Qj, 1, &htmp);
                 // copy htmp to hjk
                 cudaMemcpy(hjk, &htmp, sizeof(float), cudaMemcpyHostToDevice);
                 htmp *= -1.0f;
                 // update v = v-hjk*Qj
-                cublasSaxpy(blas_ctx->handle, xdim, &htmp, Qj, 1, v, 1);
+                cublasSaxpy(blas_ctx->handle[0], xdim, &htmp, Qj, 1, v, 1);
             } else 
             if constexpr (std::is_same<double,T>::value) {
                 double htmp = 0.0;
                 // hjk = dot(v, Q)
-                cublasDdot(blas_ctx->handle, xdim, v, 1, Qj, 1, &htmp);
+                cublasDdot(blas_ctx->handle[0], xdim, v, 1, Qj, 1, &htmp);
                 cudaMemcpy(hjk, &htmp, sizeof(double), cudaMemcpyHostToDevice);
                 htmp *= -1.0;
                 // update v = v-hjk*Qj
-                cublasDaxpy(blas_ctx->handle, xdim, &htmp, Qj, 1, v, 1);
+                cublasDaxpy(blas_ctx->handle[0], xdim, &htmp, Qj, 1, v, 1);
             }
 
         }
@@ -344,10 +344,10 @@ void MFgmres(
         T vnorm;
 
         if constexpr (std::is_same<float, T>::value) {
-            cublasSnrm2(blas_ctx->handle, xdim, v,   1, &vnorm);
+            cublasSnrm2(blas_ctx->handle[0], xdim, v,   1, &vnorm);
         } else 
         if constexpr (std::is_same<double, T>::value) {
-            cublasDnrm2(blas_ctx->handle, xdim, v,   1, &vnorm);
+            cublasDnrm2(blas_ctx->handle[0], xdim, v,   1, &vnorm);
         }
         
         if(std::isnan(vnorm)) {
@@ -363,14 +363,14 @@ void MFgmres(
         if constexpr (std::is_same<float, T>::value) {
             float vnormi = 1.0f/vnorm;
             // update Q_k+1
-            cublasScopy(blas_ctx->handle, xdim, v, 1, Qkp1, 1);
-            cublasSscal(blas_ctx->handle, xdim, &vnormi, Qkp1, 1);
+            cublasScopy(blas_ctx->handle[0], xdim, v, 1, Qkp1, 1);
+            cublasSscal(blas_ctx->handle[0], xdim, &vnormi, Qkp1, 1);
         } else 
         if constexpr (std::is_same<double, T>::value) {
             double vnormi = 1.0/vnorm;
             // update Q_k+1
-            cublasDcopy(blas_ctx->handle, xdim, v, 1, Qkp1, 1);
-            cublasDscal(blas_ctx->handle, xdim, &vnormi, Qkp1, 1);
+            cublasDcopy(blas_ctx->handle[0], xdim, v, 1, Qkp1, 1);
+            cublasDscal(blas_ctx->handle[0], xdim, &vnormi, Qkp1, 1);
         }
 
         /*apply givens rotation for first k items*/
@@ -422,7 +422,7 @@ void MFgmres(
     /*calling solver to solve the triangular linear system*/
     if constexpr (std::is_same<float,  T>::value) {
         cublasStrsm(    
-            blas_ctx->handle,
+            blas_ctx->handle[0],
             CUBLAS_SIDE_LEFT,
             CUBLAS_FILL_MODE_UPPER, 
             CUBLAS_OP_N,
@@ -435,7 +435,7 @@ void MFgmres(
     } else 
     if constexpr (std::is_same<double, T>::value) {
         cublasDtrsm(    
-            blas_ctx->handle,
+            blas_ctx->handle[0],
             CUBLAS_SIDE_LEFT,
             CUBLAS_FILL_MODE_UPPER, 
             CUBLAS_OP_N,
