@@ -97,6 +97,7 @@ struct gmres_app_ctx {
     bool* nonpadding; // add a padding value for gmres calculation, skip padding space 
 
     unsigned long long int b_reg[10];    // starting address for b vector on PyFR side
+    unsigned long long int x_reg[10];    // x soln on PyFR side
     unsigned long long int curr_reg[10]; // starting address for current operating space on PyFR
 
     gmres_app_ctx(MPI_Comm mpicom_in,

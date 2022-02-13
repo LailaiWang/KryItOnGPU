@@ -253,6 +253,21 @@ void set_b_reg_addr(void* gmres,
     }
 }
 
+/*set the address for x vector*/
+void set_x_reg_addr(void* gmres,
+                    void* addr,
+                    unsigned int etype,
+                    unsigned int dsize){
+    unsigned long long int* data = (unsigned long long int *) addr;
+    if(dsize == sizeof(double)) {
+        struct gmres_app_ctx<double>* gctx = (struct gmres_app_ctx<double>*) (gmres);
+        gctx->set_reg_addr(data, gctx->x_reg, etype);
+    } else {
+        struct gmres_app_ctx<float>* gctx  = (struct gmres_app_ctx<float>*) (gmres);
+        gctx->set_reg_addr(data, gctx->x_reg, etype);
+    }
+}
+
 /*set the address for current operating space*/
 void set_curr_reg_addr(void* gmres,
                        void* addr,
@@ -275,6 +290,16 @@ void check_b_reg_data(void* gmres, unsigned int ne, unsigned int len, unsigned i
     } else {
         struct gmres_app_ctx<float>* gctx  = (struct gmres_app_ctx<float>*) (gmres);
         print_data_wrapper<float> (reinterpret_cast<float*>(gctx->b_reg[ne]), len); 
+    }
+}
+
+void check_x_reg_data(void* gmres, unsigned int ne, unsigned int len, unsigned int dsize) {
+    if(dsize == sizeof(double)) {
+        struct gmres_app_ctx<double>* gctx = (struct gmres_app_ctx<double>*) (gmres);
+        print_data_wrapper<double> (reinterpret_cast<double*>(gctx->x_reg[ne]), len);   
+    } else {
+        struct gmres_app_ctx<float>* gctx  = (struct gmres_app_ctx<float>*) (gmres);
+        print_data_wrapper<float> (reinterpret_cast<float*>(gctx->x_reg[ne]), len); 
     }
 }
 

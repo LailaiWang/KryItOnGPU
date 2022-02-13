@@ -294,7 +294,7 @@ void MFgmres(
     
     /*copy the initial guess to the current reg bank in PyFR*/
     gmres_ctx->copy_to_user(
-        gmres_ctx->curr_reg, reinterpret_cast<unsigned long long int> (v), 
+        gmres_ctx->x_reg, reinterpret_cast<unsigned long long int> (v), 
         gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape
     );
     /*For right preconditioning, the ||b-Ax|| is minimized*/
@@ -495,7 +495,7 @@ void MFgmres(
     /* solution is stored in x */
     /* copy solution for native data layout to PyFR data layout*/
     gmres_ctx->copy_to_user(
-       gmres_ctx->curr_reg, reinterpret_cast<unsigned long long int> (v), 
+       gmres_ctx->x_reg, reinterpret_cast<unsigned long long int> (v), 
        gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape
     );
 
