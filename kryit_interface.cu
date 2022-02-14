@@ -25,8 +25,9 @@ void* create_gmres_ctx(MPI_Comm mpicomm,
     unsigned long int* datashape = (unsigned long int*) datashape_in;
 
     if (size == sizeof(double)) {
-        double at = *((double*)atol);
-        double rt = *((double*)rtol);
+        
+        double at = *((double*)(atol));
+        double rt = *((double*)(rtol));
         
         // testing mpi_common_world
         int size, rank;

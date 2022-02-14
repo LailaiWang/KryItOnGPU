@@ -176,9 +176,6 @@ void mGPU_dot_breg_wrapper(void* gctx, T* dotval, cublasHandle_t *handle) {
         sum += localnorm;
     }
     
-    cudaStream_t streamId;
-    cublasGetStream(handle[0], &streamId);
-
     MPI_Datatype dtype = MPI_DATATYPE_NULL;
     if constexpr (std::is_same<float, T>::value) {
         dtype = MPI_FLOAT;
@@ -248,12 +245,14 @@ void MFgmres(
     /* dimension of the problem and krylov subspace*/
     unsigned long int xdim = gmres_ctx->xdim;
     unsigned int kspace = gmres_ctx->kspace;
-
+    
+    /*small vectors*/
     T* sn   = gmres_ctx->sn;    // dimension kspace+1
     T* cs   = gmres_ctx->cs;    // dimension kspace+1
     T* e1   = gmres_ctx->e1;    // dimension kspace+1
     T* beta = gmres_ctx->beta;  // dimension kspace+11
     
+    /*large vectors*/
     T* Q = gmres_ctx->Q; // dimension xdim*(kspace+1)
     T* h = gmres_ctx->h; // dimension (kspace+1)*kspace
     T* v = gmres_ctx->v; // dimension  xdim
@@ -283,7 +282,6 @@ void MFgmres(
 
     /*set up the initial value*/
     set_zero_wrapper(v,   xdim);   
-    
 
     bool init = true;
 
@@ -309,8 +307,9 @@ void MFgmres(
     /* compute the norm of r = b - Ax */
     /* for initial guess x = 0, for restart x != 0*/
     mGPU_norm2_wrapper<T>(blas_ctx->handle, xdim, Q, &rnorm, gmres_ctx->mpicomm);
-
+    
     error = rnorm/bnorm;
+
     if (restart == false ) error0 = error; /*only update error0 at the very beginning*/
     
     if(error0 < atol) return; /*already converged, directly return*/
@@ -321,20 +320,17 @@ void MFgmres(
         return;
     }
 
+    /*setting up initial beta vector*/
+    cudaMemcpy(beta, &rnorm, sizeof(T), cudaMemcpyHostToDevice);
+
     /*normalize Q*/
     if constexpr (std::is_same<float, T>::value) {
         float rnormi = 1.0f/rnorm;
         cublasSscal(blas_ctx->handle[0], xdim, &rnormi, Q, 1);
-        // beta vector 
-        cublasScopy(blas_ctx->handle[0], xdim, e1, 1, beta, 1);
-        cublasSscal(blas_ctx->handle[0], xdim, &rnorm, beta, 1);
     } else
     if constexpr (std::is_same<double, T>::value){
         double rnormi = 1.0/rnorm;
         cublasDscal(blas_ctx->handle[0], xdim, &rnormi, Q, 1);
-        // beta vector
-        cublasDcopy(blas_ctx->handle[0], xdim, e1,1, beta, 1);
-        cublasDscal(blas_ctx->handle[0], xdim, &rnorm, beta, 1);
     }
 
     
@@ -353,7 +349,7 @@ void MFgmres(
             gmres_ctx->curr_reg, reinterpret_cast<unsigned long long int> (v),
             gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape
         );
-
+        
         for(unsigned int j=0;j<k;j++) {
             T* hjk = h+j+(k-1)*(kspace+1);
             T* Qj  = Q+xdim*j;
@@ -380,7 +376,7 @@ void MFgmres(
         T vnorm;
         
         mGPU_norm2_wrapper(blas_ctx->handle, xdim, v, &vnorm, gmres_ctx->mpicomm);
-        
+
         if(std::isnan(vnorm)) {
             gmres_ctx->convrson = GMRES_DIV;
             return;
@@ -420,10 +416,14 @@ void MFgmres(
         dot_one<T><<<1,1>>>(sn+k-1,beta+k-1,beta+k,  -1.0);
         dot_one<T><<<1,1>>>(cs+k-1,beta+k-1,beta+k-1, 1.0);
         error = 0.0;
+
         cudaMemcpy(&error, beta+k, sizeof(T), cudaMemcpyDeviceToHost);
 
         error = std::fabs(error)/bnorm;
         
+        if       constexpr (std::is_same<float,  T>::value) { printf("error is %12.5e\n",error);}
+        else if  constexpr (std::is_same<double, T>::value) { printf("error is %12.5e\n",error);}
+
         cnt += 1;
         gmres_ctx->conv_iters += 1;
         if(error < atol) { 

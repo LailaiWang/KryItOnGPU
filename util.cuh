@@ -59,7 +59,7 @@ void copy_data_to_native(
     }
 
     for(unsigned int ie=0;ie<etype;ie++) {
-        double* estart = reinterpret_cast<double*> (startingAddr[ie]);
+        T* estart = reinterpret_cast<T*> (startingAddr[ie]);
         unsigned long int offset = 0;
         for(unsigned int k=0;k<=ie;k++) {
             offset += esize[k];
@@ -97,7 +97,7 @@ void copy_data_to_user(
     
 
     for(unsigned int ie=0;ie<etype;ie++) {
-        double* estart = reinterpret_cast<double*> (startingAddr[ie]);
+        T* estart = reinterpret_cast<T*> (startingAddr[ie]);
         unsigned long int offset = 0;
         for(unsigned int k=0;k<=ie;k++) {
             offset += esize[k];
@@ -106,7 +106,7 @@ void copy_data_to_user(
         CUDA_CALL(
             cudaMemcpy(
                 estart, local+offset,
-                sizeof(double)*esize[ie+1], cudaMemcpyDeviceToDevice
+                sizeof(T)*esize[ie+1], cudaMemcpyDeviceToDevice
             )
         );
     }
