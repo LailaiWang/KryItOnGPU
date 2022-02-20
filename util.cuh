@@ -35,6 +35,13 @@ void print_data_wrapper(T* a, unsigned long int xdim) {
     cudaDeviceSynchronize();
 }
 
+template<typename T>
+__global__
+void copy_array(T* dst, T* src, T scale, unsigned long int xdim) {
+    unsigned long int idx = blockIdx.x*blockDim.x + threadIdx.x;
+    if(idx >= xdim) return;
+    dst[idx] = scale*src[idx];
+}
 
 template<typename T>
 void copy_data_to_native(
@@ -42,7 +49,8 @@ void copy_data_to_native(
           unsigned long long int localAddr,  // local address
           unsigned int etype, // element type
           unsigned int datadim, // dimension of the datashape
-          unsigned long int *datashapes // datashape
+          unsigned long int *datashapes, // datashape
+          cudaStream_t stream
 ) {
     
     // Data on PyFR side for each element type are not necessarily contiguous
@@ -65,15 +73,13 @@ void copy_data_to_native(
             offset += esize[k];
         }
 
-        CUDA_CALL(
-            cudaMemcpy(
-                local+offset, estart,
-                sizeof(T)*esize[ie+1], cudaMemcpyDeviceToDevice
-           )
-        );
+        unsigned long int nblocks = std::ceil((T) esize[ie+1]/256);   
+        copy_array<<<nblocks,256,0,stream>>>(local+offset, estart, (T)1.0, esize[ie+1]);
     }
 
 }
+
+
 
 template<typename T>
 void copy_data_to_user(
@@ -81,7 +87,8 @@ void copy_data_to_user(
           unsigned long long int localAddr,  // local address
           unsigned int etype, // element type
           unsigned int datadim, 
-          unsigned long int * datashapes// datashape
+          unsigned long int * datashapes,// datashape
+          cudaStream_t stream
 ){
     
     // cast to T* pointer
@@ -102,20 +109,15 @@ void copy_data_to_user(
         for(unsigned int k=0;k<=ie;k++) {
             offset += esize[k];
         }
-
-        CUDA_CALL(
-            cudaMemcpy(
-                estart, local+offset,
-                sizeof(T)*esize[ie+1], cudaMemcpyDeviceToDevice
-            )
-        );
+        unsigned long int nblocks = std::ceil((T) esize[ie+1]/256);   
+        copy_array<<<nblocks,256,0,stream>>>(estart, local+offset, (T)1.0, esize[ie+1]);
     }
 }
 
 
-void set_zeros_double(double*, unsigned long int xdim);
-void set_zeros_float (float*,  unsigned long int xdim);
-void set_ones_double (double*, unsigned long int xdim);
-void set_ones_float  (float*,  unsigned long int xdim);
+void set_zeros_double(double*, unsigned long int xdim, cudaStream_t);
+void set_zeros_float (float*,  unsigned long int xdim, cudaStream_t);
+void set_ones_double (double*, unsigned long int xdim, cudaStream_t);
+void set_ones_float  (float*,  unsigned long int xdim, cudaStream_t);
 
 #endif

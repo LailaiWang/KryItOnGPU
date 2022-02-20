@@ -135,7 +135,8 @@ struct gmres_app_ctx {
                     unsigned long long int,  // local stress
                     unsigned int, // element type
                     unsigned int, // datadim
-                    unsigned long int * // datashape
+                    unsigned long int *, // datashape
+                    cudaStream_t
                   ),
 
                   void (*copy_to_uservec)(
@@ -143,7 +144,8 @@ struct gmres_app_ctx {
                     unsigned long long int,  // local stress
                     unsigned int, // element type
                     unsigned int, //datadim
-                    unsigned long int * // datashape
+                    unsigned long int *, // datashape
+                    cudaStream_t
                   ), 
 
                   void (*set_reg_addr_inp) (
@@ -220,14 +222,16 @@ struct gmres_app_ctx {
           unsigned long long int,  // local address
           unsigned int,            // element type
           unsigned int,            // datadim
-          unsigned long int *      // datashape
+          unsigned long int *,     // datashape
+          cudaStream_t
     );
     void (*copy_to_user) (
           unsigned long long int*, // input starting address
           unsigned long long int,  // local address
           unsigned int,            // element type
           unsigned int,            // datadim
-          unsigned long int *      // datashape
+          unsigned long int *,     // datashape
+          cudaStream_t
     );
     void (*set_reg_addr) (
         unsigned long long int*, // input

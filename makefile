@@ -9,15 +9,15 @@ CUFLAGS = -std=c++17 --default-stream per-thread -Xcompiler -fPIC -Xcompiler -fs
 AR = ar -rv
 
 # these are for swig
-MPI4PY_INC_DIR = /home/laiwang/.local/lib/python3.8/site-packages/mpi4py/include
-PYTHON_INC_DIR = /usr/include/python3.8
-NUMPY_INC_DIR = /home/laiwang/.local/lib/python3.8/site-packages/numpy/core/include
+MPI4PY_INC_DIR = /home/laiwang/.local/lib/python3.10/site-packages/mpi4py/include
+PYTHON_INC_DIR = /home/laiwang/python-install/include/python3.10
+NUMPY_INC_DIR = /home/laiwang/.local/lib/python3.10/site-packages/numpy/core/include
 SWIG_BIN = /usr/bin
 
 SGFLAGS = -I $(PYTHON_INC_DIR) -I$(MPI4PY_INC_DIR) -I$(NUMPY_INC_DIR)
 
-CFLAGS +=  -g
-CUFLAGS += -g
+CFLAGS +=  -O3
+CUFLAGS += -O3
 
 CUDA_DIR = /usr/local/cuda-11.3
 CUDA_INC_DIR = $(CUDA_DIR)/include

@@ -29,11 +29,7 @@ extern "C" {
     void clean_gmres_ctx(void* input);
 
     // passing all PyFR's streams into Krylov it
-    void* create_cublas_ctx(
-        unsigned int size,
-        void* stream_comp_0, void* stream_copy_0,
-        void* stream_comp_1, void* stream_copy_1
-    ); 
+    void* create_cublas_ctx( unsigned int size, void* stream_comp_0); 
 
     void clean_cublas_ctx(void* input); 
     void* gmres(unsigned int size);
@@ -48,8 +44,6 @@ extern "C" {
 
     // some help function for debugging purpose
     void print_data(void* x, unsigned long int xdim, unsigned int dsize);
-    void set_zero  (void* x, unsigned long int xdim, unsigned int dsize);
-    void set_one   (void* x, unsigned long int xdim, unsigned int dsize);
     
     // function to set the address of the pmg src bank in PyFR
     void set_b_reg_addr(void* gctx, void* addr, unsigned int etype, unsigned int dsize);

@@ -116,34 +116,20 @@ void clean_gmres_ctx(unsigned int size, void* input) {
     return;
 }
 
-void* create_cublas_ctx(
-    unsigned int size,
-    void* stream_comp_0,
-    void* stream_copy_0,
-    void* stream_comp_1,
-    void* stream_copy_1) {
+void* create_cublas_ctx( unsigned int size, void* stream_comp_0) {
     // cast the pointer
     
     cudaStream_t comp_stream_0 = (cudaStream_t) stream_comp_0;
-    cudaStream_t copy_stream_0 = (cudaStream_t) stream_copy_0;
-    cudaStream_t comp_stream_1 = (cudaStream_t) stream_comp_1;
-    cudaStream_t copy_stream_1 = (cudaStream_t) stream_copy_1;
     
     // need to launch cublas
     struct cublas_app_ctx* bctx = 
         new cublas_app_ctx(
             comp_stream_0,
-            copy_stream_0,
-            comp_stream_1,
-            copy_stream_1,
             &initialize_cublas,
             &finalize_cublas);
-    bctx->create_cublas(bctx->handle);
+    bctx->create_cublas(&bctx->handle);
     // for each handle assign a stream to it
-    cublasSetStream(bctx->handle[0], bctx->comp_stream_0);
-    cublasSetStream(bctx->handle[1], bctx->copy_stream_0);
-    cublasSetStream(bctx->handle[2], bctx->comp_stream_1);
-    cublasSetStream(bctx->handle[3], bctx->copy_stream_1);
+    cublasSetStream(bctx->handle, bctx->stream);
 
     return (void*) bctx;
 }
@@ -151,7 +137,7 @@ void* create_cublas_ctx(
 void clean_cublas_ctx(void* input) {
     // need to destroy cublas
     struct cublas_app_ctx* bctx = (struct cublas_app_ctx*) input;
-    bctx->clean_cublas(bctx->handle);
+    bctx->clean_cublas(&bctx->handle);
     delete bctx;
     return;
 }
@@ -213,22 +199,6 @@ void gmres_solve(
     gmresSol(funcdot, solctx, gctxptr, bctxptr);
 }
 
-
-void set_zero(void* x, unsigned long int xdim, unsigned int size) {
-    if(size == sizeof(double)) {
-        set_zeros_double((double*)x, xdim);
-    } else {
-        set_zeros_float ((float*)x, xdim);
-    }
-}
-
-void set_one(void* x, unsigned long int xdim, unsigned int size) {
-    if(size == sizeof(double)) {
-        set_ones_double((double*)x, xdim);
-    } else {
-        set_ones_float ((float*)x, xdim);
-    }
-}
 
 void print_data(void* x, unsigned long int xdim, unsigned int size) {
     if(size == sizeof(double)) {

@@ -28,22 +28,22 @@ void set_one_float(float* __restrict__ x, unsigned long int xdim) {
     }
 }
 
-void set_zeros_double(double*  x, unsigned long int xdim) {
+void set_zeros_double(double*  x, unsigned long int xdim, cudaStream_t stream) {
     unsigned long int blocks = std::ceil(double(xdim)/256);
-    set_zero_double<<<blocks,256>>>(x,xdim);
+    set_zero_double<<<blocks,256, 0, stream>>>(x,xdim);
 }
 
-void set_zeros_float(float*  x, unsigned long int xdim) {
+void set_zeros_float(float*  x, unsigned long int xdim, cudaStream_t stream) {
     unsigned long int blocks = std::ceil(float(xdim)/256);
-    set_zero_float<<<blocks,256>>>(x,xdim);
+    set_zero_float<<<blocks,256, 0, stream>>>(x,xdim);
 }
 
-void set_ones_double(double* x, unsigned long int xdim) {
+void set_ones_double(double* x, unsigned long int xdim, cudaStream_t stream) {
     unsigned long int blocks = std::ceil(double(xdim)/256);
-    set_one_double<<<blocks,256>>>(x,xdim);
+    set_one_double<<<blocks,256,0,stream>>>(x,xdim);
 }
 
-void set_ones_float(float* x, unsigned long int xdim) {
+void set_ones_float(float* x, unsigned long int xdim, cudaStream_t stream) {
     unsigned long int blocks = std::ceil(float(xdim)/256);
-    set_one_float<<<blocks,256>>>(x,xdim);
+    set_one_float<<<blocks,256,0,stream>>>(x,xdim);
 }
