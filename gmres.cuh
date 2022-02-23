@@ -46,18 +46,6 @@ void apply_rot(T* __restrict__ h, T* __restrict__ cs, T* __restrict__ sn, unsign
 
 template<typename T>
 __global__
-void apply_rot_beta(T* __restrict__ beta, T* __restrict__ cs, T* __restrict__ sn, unsigned int k) {
-    T temp = 0.0f;
-    for(unsigned int i=0;i<k;i++) {
-        temp = cs[i]*beta[i]+sn[i]*beta[i+1];
-        beta[i+1] = -sn[i]*beta[i]+cs[i]*beta[i+1];
-        beta[i  ] = temp;
-    }
-    return;
-}
-
-template<typename T>
-__global__
 void dot_one(T* __restrict__ a, T* __restrict__ b, T* __restrict__ c, T scal) {
     *c = (*a)*(*b)*scal;
     return;
@@ -468,9 +456,9 @@ void MFgmres(
     
     /*get the solution*/
     set_zero_wrapper(v,   xdim, blas_ctx->stream);   
+    nblocks = std::ceil((T) xdim/256);
     for(unsigned int k=0;k<cnt;k++) {
-        unsigned long int blocks = std::ceil((T) xdim/256);
-        get_soln<<<blocks,256,0,blas_ctx->stream>>>(beta+k, v, Q+k*xdim, xdim);
+        get_soln<<<nblocks,256,0,blas_ctx->stream>>>(beta+k, v, Q+k*xdim, xdim);
     }
     /*since not converged */
     if (restart && icnt != 0) {
@@ -541,7 +529,13 @@ void  PreconditioningWithFrozenKrylov(void* gtx, void* btx) {
     /*copy this value to beta*/
     cudaMemcpy(beta, &vnorm, sizeof(T), cudaMemcpyHostToDevice);
     /*rotate beta*/
-
+    for(unsigned int k=1;k<kspace+1;k++) {
+        /* apply givens rotation to corresponding beta  since the last is 0 */
+        /* beta (k+1) = -sn(k)*beta(k) */
+        /* beta (k  ) =  cs(k)*beta(k) */
+        dot_one<T><<<1,1,0,blas_ctx->stream>>>(sn+k-1, beta+k-1, beta+k,  -1.0);
+        dot_one<T><<<1,1,0,blas_ctx->stream>>>(cs+k-1, beta+k-1, beta+k-1, 1.0);
+    }
 
     /*resolve the linear system*/
     /*calling solver to solve the triangular linear system*/
@@ -578,7 +572,12 @@ void  PreconditioningWithFrozenKrylov(void* gtx, void* btx) {
     for(unsigned int k=0;k<kspace;k++) {
         get_soln<<<blocks,256,0,blas_ctx->stream>>>(beta+k, v, Q+k*xdim, xdim);
     }
-
+    
+    /*curr reg is the place where the preconditioned vector stored*/
+    gmres_ctx->copy_to_user(
+       gmres_ctx->curr_reg, reinterpret_cast<unsigned long long int> (v), 
+       gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape, blas_ctx->stream
+    );
     /*synchronize our stream before we return back to PyFR*/
     cudaStreamSynchronize(blas_ctx->stream);
     return;
