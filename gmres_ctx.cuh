@@ -12,8 +12,10 @@
 
 template<typename T>
 void allocate_ram_gmres_app_ctx(
-        T* &Q,  T* &h,  T* &v,
-        T* &sn, T* &cs, T* &e1, T* &beta,
+        T* &Q,    T* &h,   T* &v,
+        T* &sn,   T* &cs,  T* &beta,
+        T* &Qf,   T* &hf,  T* &vf,
+        T* &snf,  T* &csf, T* &betaf,
         bool* &nonpadding,
         unsigned long int xdim, unsigned int kspace
 ){
@@ -24,15 +26,26 @@ void allocate_ram_gmres_app_ctx(
 
     cudaMalloc((void **) &sn,   sizeof(T)*(kspace+1));
     cudaMalloc((void **) &cs,   sizeof(T)*(kspace+1));
-    cudaMalloc((void **) &e1,   sizeof(T)*(kspace+1));
     cudaMalloc((void **) &beta, sizeof(T)*(kspace+11));
+    
+
+    cudaMalloc((void **) &Qf,    sizeof(T)*xdim*(kspace+1));
+    cudaMalloc((void **) &hf,    sizeof(T)*kspace*(kspace+1));
+    cudaMalloc((void **) &vf,    sizeof(T)*xdim);
+
+    cudaMalloc((void **) &snf,   sizeof(T)*(kspace+1));
+    cudaMalloc((void **) &csf,   sizeof(T)*(kspace+1));
+    cudaMalloc((void **) &betaf, sizeof(T)*(kspace+11));
+
     cudaMalloc((void **) &nonpadding, sizeof(bool)*xdim);
 }
 
 template<typename T>
 void deallocate_ram_gmres_app_ctx(
-        T* &Q,  T* &h,  T* &v,
-        T* &sn, T* &cs, T* &e1, T* &beta, 
+        T* &Q,   T* &h,   T* &v,
+        T* &sn,  T* &cs,  T* &beta, 
+        T* &Qf,  T* &hf,  T* &vf,
+        T* &snf, T* &csf, T* &betaf, 
         bool* &nonpadding
 ){
     cudaFree(Q);
@@ -41,8 +54,16 @@ void deallocate_ram_gmres_app_ctx(
 
     cudaFree(sn);
     cudaFree(cs);
-    cudaFree(e1);
     cudaFree(beta);
+
+    cudaFree(Qf);
+    cudaFree(hf);
+    cudaFree(vf);
+
+    cudaFree(snf);
+    cudaFree(csf);
+    cudaFree(betaf);
+
     cudaFree(nonpadding);
 }
 
@@ -84,6 +105,8 @@ struct gmres_app_ctx {
     gmres_conv_reason convrson = GMRES_NOT_CONV;
     unsigned int maxiters = 3500;
     unsigned int conv_iters = 0;
+    
+    unsigned int nconv = 0; // number of iteration upon convergence
 
     unsigned int etypes; // maximum tri quad hex tet prism pyrimid
     unsigned long int soasz[2];
@@ -113,14 +136,18 @@ struct gmres_app_ctx {
                   T at, T rt,
                   void (*allocate) (
                     T* &, T* &, T* &,
-                    T* &, T* &, T* &, T* &,
+                    T* &, T* &, T* &,
+                    T* &, T* &, T* &,
+                    T* &, T* &, T* &,
                     bool* &,
                     unsigned long int,
                     unsigned int
                   ),
                   void (*deallocate) (
                     T* &, T* &, T* &,
-                    T* &, T* &, T* &, T* &,
+                    T* &, T* &, T* &, 
+                    T* &, T* &, T* &,
+                    T* &, T* &, T* &, 
                     bool* &
                   ),
                   void (*fillpad) (
@@ -187,29 +214,38 @@ struct gmres_app_ctx {
         set_reg_addr   = set_reg_addr_inp;
     };
 
-    T* b; /* a copy of b values in linear system Ax=b */
     T* Q;
     T* h;
     T* v;
 
     T* sn;
     T* cs;
-    T* e1;
     T* beta; /* beta vector last 10 values space for some intermediate calculations */
-    
-    unsigned int bdim = 1;
-    unsigned int *bstrides;
 
+    T* Qf;
+    T* hf;
+    T* vf;
+    
+    T* snf;
+    T* csf;
+    T* betaf;
+    
     void (*allocate_ram) (
         T* &, T* &, T* &,
-        T* &, T* &, T* &, T* &, bool* &,
+        T* &, T* &, T* &, 
+        T* &, T* &, T* &,
+        T* &, T* &, T* &, 
+        bool* &,
         unsigned long int,
         unsigned int
     );
 
     void (*deallocate_ram) (
         T* &, T* &, T* &,
-        T* &, T* &, T* &, T* &, bool* &
+        T* &, T* &, T* &, 
+        T* &, T* &, T* &,
+        T* &, T* &, T* &, 
+        bool* &
     );
     
     void (*fill) (unsigned int, unsigned long int*, 

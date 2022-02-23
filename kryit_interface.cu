@@ -58,8 +58,11 @@ void* create_gmres_ctx(MPI_Comm mpicomm,
         
         /*allocate the ram here*/
         gctx->allocate_ram(
-            gctx->Q,  gctx->h,  gctx->v, 
-            gctx->sn, gctx->cs, gctx->e1, gctx->beta, gctx->nonpadding,
+            gctx->Q,   gctx->h,   gctx->v, 
+            gctx->sn,  gctx->cs,  gctx->beta, 
+            gctx->Qf,  gctx->hf,  gctx->vf, 
+            gctx->snf, gctx->csf, gctx->betaf, 
+            gctx->nonpadding,
             gctx->xdim, 
             gctx->kspace
         );
@@ -89,8 +92,11 @@ void* create_gmres_ctx(MPI_Comm mpicomm,
         );
         /*allocate the ram here*/
         gctx->allocate_ram(
-            gctx->Q,  gctx->h,  gctx->v, 
-            gctx->sn, gctx->cs, gctx->e1, gctx->beta, gctx->nonpadding,
+            gctx->Q,   gctx->h,   gctx->v, 
+            gctx->sn,  gctx->cs,  gctx->beta, 
+            gctx->Qf,  gctx->hf,  gctx->vf, 
+            gctx->snf, gctx->csf, gctx->betaf, 
+            gctx->nonpadding,
             gctx->xdim, 
             gctx->kspace
         );
@@ -150,7 +156,8 @@ void* gmres(unsigned int size) {
             void (*) (void*, bool), /*solv_ctx, bool*/
             void*,
             void*,
-            void*
+            void*,
+            unsigned int
         ) = &MFgmres<double>;
         
         return (void*) gmresSol;
@@ -159,7 +166,8 @@ void* gmres(unsigned int size) {
             void (*) (void*, bool), /*solv_ctx, bool*/
             void*,
             void*,
-            void*
+            void*,
+            unsigned int
         ) = &MFgmres<float>;
         return (void* ) gmresSol;
     }
@@ -172,7 +180,8 @@ void gmres_solve(
                  void* gmresptr,   // function pointers
                  void* solctx,    // solver context
                  void* gctxptr,   // structure pointers
-                 void* bctxptr    // structure pointers
+                 void* bctxptr,    // structure pointers
+                 unsigned int icnt
                 ) {
     // cast the void pointer to the function pointer
     void (*funcdot) (
@@ -188,17 +197,36 @@ void gmres_solve(
         void (*) (void*, bool), /*solv ctx, bool*/
         void*, // solver context
         void*, // gmres context
-        void*  // cublas context
+        void*, // cublas context
+        unsigned int
     ) = ( void (*) (
             void (*) (void*, bool),
             void*,
             void*,
-            void*)
+            void*,
+            unsigned int)
         ) gmresptr;
     // solve the system using gmres   
-    gmresSol(funcdot, solctx, gctxptr, bctxptr);
+    gmresSol(funcdot, solctx, gctxptr, bctxptr, icnt);
 }
 
+void* get_solve_with_frozen_krylov(unsigned int dsize) {
+    if(sizeof(double) == dsize) {
+        void (*solf) (void*, void*)  = &PreconditioningWithFrozenKrylov<double>;
+        return (void*) solf;
+    } else
+    if(sizeof(float) == dsize) {
+        void (*solf) (void*, void*)  = &PreconditioningWithFrozenKrylov<float>;
+        return (void*) solf;
+    }
+    return (void*) NULL; // something went wrong
+}
+
+void solve_with_frozen_krylov(void* funcptr, void* gctx, void* bctx)  {
+    void (*solf) (void*, void*) = 
+        (void (*) (void*,void*)) funcptr;
+    solf(gctx, bctx);
+}
 
 void print_data(void* x, unsigned long int xdim, unsigned int size) {
     if(size == sizeof(double)) {

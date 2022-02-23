@@ -39,8 +39,12 @@ extern "C" {
                      void* gmreptr,   // gmres
                      void* solctx,    // solver application context
                      void* gctxptr,   // gmres application context
-                     void* bctxptr    // cublas application context
+                     void* bctxptr,   // cublas application context
+                     unsigned int     // number of iterations if 0 force to build full krylov
                     );
+    
+    void* get_solve_with_frozen_krylov(unsigned int dsize);
+    void solve_with_frozen_krylov(void* funcptr, void* gctx, void* bctx);
 
     // some help function for debugging purpose
     void print_data(void* x, unsigned long int xdim, unsigned int dsize);

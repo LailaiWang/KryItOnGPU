@@ -236,7 +236,8 @@ void MFgmres(
       void (*MatDotVec) (void*, bool), /* matrix-vector product func*/
       void* solctx, /*solver context defined as provided*/
       void* gtx,
-      void* btx
+      void* btx,
+      unsigned int icnt
     ) {
     /* grab different application context*/
     struct gmres_app_ctx<T>* gmres_ctx = (struct gmres_app_ctx<T>*) (gtx);
@@ -400,8 +401,8 @@ void MFgmres(
         /* rotate corresponding beta  since the last is 0 */
         /* beta (k+1) = -sn(k)*beta(k) */
         /* beta (k  ) =  cs(k)*beta(k) */
-        dot_one<T><<<1,1,0,blas_ctx->stream>>>(sn+k-1,beta+k-1,beta+k,  -1.0);
-        dot_one<T><<<1,1,0,blas_ctx->stream>>>(cs+k-1,beta+k-1,beta+k-1, 1.0);
+        dot_one<T><<<1,1,0,blas_ctx->stream>>>(sn+k-1, beta+k-1, beta+k,  -1.0);
+        dot_one<T><<<1,1,0,blas_ctx->stream>>>(cs+k-1, beta+k-1, beta+k-1, 1.0);
         error = 0.0;
 
         cudaMemcpy(&error, beta+k, sizeof(T), cudaMemcpyDeviceToHost);
@@ -410,21 +411,25 @@ void MFgmres(
         
         cnt += 1;
         gmres_ctx->conv_iters += 1;
-        if(error < atol) { 
-            /*converged due to abs tol being satisfied*/
-            gmres_ctx->convrson = GMRES_CONV_ABS;
-            break;
-        } else 
-        if(error/error0 < rtol)  {
-            /*converged due to rel tol being satisfied*/
-            gmres_ctx->convrson = GMRES_CONV_REL;
-            break;
-        } else 
-        if (gmres_ctx->conv_iters > gmres_ctx->maxiters) {
-            /*converged due to rel tol being satisfied*/
-            gmres_ctx->convrson = GMRES_CONV_MAX_ITER;
-            break;
-        }
+
+        /*for the first pseudo iteration in PTC, force to continue till reach maximum dimension*/
+        if (icnt != 0 ) {
+            if(error < atol) { 
+                /*converged due to abs tol being satisfied*/
+                gmres_ctx->convrson = GMRES_CONV_ABS;
+                break;
+            } else 
+            if(error/error0 < rtol)  {
+                /*converged due to rel tol being satisfied*/
+                gmres_ctx->convrson = GMRES_CONV_REL;
+                break;
+            } else 
+            if (gmres_ctx->conv_iters > gmres_ctx->maxiters) {
+                /*converged due to rel tol being satisfied*/
+                gmres_ctx->convrson = GMRES_CONV_MAX_ITER;
+                break;
+            }
+        } 
     }
 
     if(gmres_ctx->convrson == GMRES_NOT_CONV) {
@@ -468,7 +473,8 @@ void MFgmres(
         get_soln<<<blocks,256,0,blas_ctx->stream>>>(beta+k, v, Q+k*xdim, xdim);
     }
     /*since not converged */
-    if (restart) {
+    if (restart && icnt != 0) {
+        /*only allow restart except the first iteration in PTC*/
         goto RESTART_ENTRY;
     }
 
@@ -479,9 +485,101 @@ void MFgmres(
        gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape, blas_ctx->stream
     );
     
+    /*For the first pseudo iteration, backup the krylov space*/
+    if(icnt == 0) {
+        T* Qf  = gmres_ctx->Qf;
+        T* hf  = gmres_ctx->hf;
+        T* snf = gmres_ctx->snf;
+        T* csf = gmres_ctx->csf;
+        nblocks = std::ceil((T)xdim*(kspace+1)/256);
+        copy_array<<<nblocks, 256, 0, blas_ctx->stream>>>(Qf,  Q,  (T)1.0, xdim*(kspace+1));
+        nblocks = std::ceil((T) kspace*(kspace+1)/256);
+        copy_array<<<nblocks, 256, 0, blas_ctx->stream>>>(hf,  h,  (T)1.0, kspace*(kspace+1));
+        nblocks = std::ceil((T)(kspace+1)/256);
+        copy_array<<<nblocks, 256, 0, blas_ctx->stream>>>(snf, sn, (T)1.0, kspace+1);
+        copy_array<<<nblocks, 256, 0, blas_ctx->stream>>>(csf, cs, (T)1.0, kspace+1);
+        /*no need to copy vf and betaf*/
+    }
     /*synchronize our stream before we return back to PyFR*/
     cudaStreamSynchronize(blas_ctx->stream);
     return;
+}
+
+/*
+ * \fn function for the preconditioner with freezed krylov subspaces
+ * (I/Δt+I/Δτ-a_ii ∂ R/ ∂ q) Y = X
+ * (I/Δt + I/Δτ + I/Δτ* - a_ii ∂ R/ ∂ q)Y = R - (I/Δt + I/Δτ ) q +
+ *                                          X - a_ii R_0 + (I/Δt + I/Δτ ) q 
+ * Let Δτ* = 0,
+ * PY = R - (I/Δt + I/Δτ ) q + SRC(X) = b*
+ * If just one iteration PY = b*
+ * Consider frozen Kylov subspace vectors [v_0, v_1, ..., v_k]
+ * We can use these frozen vectors, apply givens rotation to new || b* ||e_1
+ * Resolve the triangluar system
+ */
+template<typename T>
+void  PreconditioningWithFrozenKrylov(void* gtx, void* btx) {
+
+    struct gmres_app_ctx<T>* gmres_ctx = (struct gmres_app_ctx<T>*) (gtx);
+    struct cublas_app_ctx* blas_ctx = (struct cublas_app_ctx*) (btx);
+    
+    unsigned long int xdim = gmres_ctx->xdim;
+    unsigned int kspace = gmres_ctx->kspace;
+
+    T* sn   = gmres_ctx->snf;
+    T* cs   = gmres_ctx->csf;
+    T* beta = gmres_ctx->betaf;
+
+    T* Q = gmres_ctx->Qf;
+    T* h = gmres_ctx->hf;
+    T* v = gmres_ctx->vf;
+
+    /*evaluate the norm*/
+    T vnorm;
+    mGPU_dot_creg_wrapper(gtx, &vnorm, blas_ctx->handle);
+    vnorm = std::sqrt(vnorm);
+    /*copy this value to beta*/
+    cudaMemcpy(beta, &vnorm, sizeof(T), cudaMemcpyHostToDevice);
+    /*rotate beta*/
+
+
+    /*resolve the linear system*/
+    /*calling solver to solve the triangular linear system*/
+    if constexpr (std::is_same<float,  T>::value) {
+        cublasStrsm(    
+            blas_ctx->handle,
+            CUBLAS_SIDE_LEFT,
+            CUBLAS_FILL_MODE_UPPER, 
+            CUBLAS_OP_N,
+            CUBLAS_DIAG_NON_UNIT,
+            kspace,1,
+            &P_1F,
+            h, kspace+1,
+            beta,  kspace
+        );
+    } else 
+    if constexpr (std::is_same<double, T>::value) {
+        cublasDtrsm(    
+            blas_ctx->handle,
+            CUBLAS_SIDE_LEFT,
+            CUBLAS_FILL_MODE_UPPER, 
+            CUBLAS_OP_N,
+            CUBLAS_DIAG_NON_UNIT,
+            kspace,1,
+            &P_1D,
+            h, kspace+1,
+            beta, kspace 
+        );
+    }
+
+    /*get the solution*/
+    set_zero_wrapper(v,   xdim, blas_ctx->stream);   
+    unsigned long int blocks = std::ceil((T) xdim/256);
+    for(unsigned int k=0;k<kspace;k++) {
+        get_soln<<<blocks,256,0,blas_ctx->stream>>>(beta+k, v, Q+k*xdim, xdim);
+    }
+
+
 }
 
 #endif
