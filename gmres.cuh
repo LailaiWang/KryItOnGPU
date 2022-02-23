@@ -579,7 +579,9 @@ void  PreconditioningWithFrozenKrylov(void* gtx, void* btx) {
         get_soln<<<blocks,256,0,blas_ctx->stream>>>(beta+k, v, Q+k*xdim, xdim);
     }
 
-
+    /*synchronize our stream before we return back to PyFR*/
+    cudaStreamSynchronize(blas_ctx->stream);
+    return;
 }
 
 #endif
