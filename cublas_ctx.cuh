@@ -4,32 +4,29 @@
 #include "cuda_runtime.h"
 #include "cublas_v2.h"
 
-void initialize_cublas(cublasHandle_t* handle);
-void finalize_cublas(cublasHandle_t* handle);
-
 struct cublas_app_ctx {
-    
     /*create four handles*/
-    cublasHandle_t handle;
-    
+    cublasHandle_t handle[2];
     /*streams for first queue in PyFR*/
     cudaStream_t stream;
-    
-    cublas_app_ctx(
-            cudaStream_t stream_comp_0,
-            void (*creat) (cublasHandle_t*),
-            void (*clean) (cublasHandle_t*)
-    ) {
-        
+    /* small constructor here*/
+    cublas_app_ctx( cudaStream_t stream_comp_0) {
         stream = stream_comp_0;
-
-        create_cublas = creat;
-        clean_cublas  = clean;
-
+        /*create two handles*/
+        cublasCreate_v2(&handle[0]);
+        cublasCreate_v2(&handle[1]);
+        /*assign stream to handle*/
+        cublasSetStream(handle[0], stream);
+        cublasSetStream(handle[1], 0);
+        /*set pointer mode*/
+        cublasSetPointerMode(handle[0], CUBLAS_POINTER_MODE_DEVICE);
+        cublasSetPointerMode(handle[1], CUBLAS_POINTER_MODE_DEVICE);
     }
-
-    void (*create_cublas) (cublasHandle_t* );
-    void (*clean_cublas)  (cublasHandle_t* );
+    /* small destructor here*/
+    ~cublas_app_ctx() {
+        cublasDestroy(handle[0]);
+        cublasDestroy(handle[1]);
+    }
 };
 
 

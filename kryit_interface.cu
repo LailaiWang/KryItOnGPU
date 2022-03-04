@@ -5,6 +5,20 @@
 /* \fn function to create the gmres context
  * @author Lai Wang
  */
+
+void* create_gmres_ram_ctx(unsigned int dsize, unsigned long int xdim, unsigned int kspace) {
+    if(dsize == sizeof(double)) {
+        struct gmres_ram_ctx<double> *ram_ctx = new struct gmres_ram_ctx<double>(xdim, kspace);
+        return (void*) ram_ctx;
+    } else 
+    if(dsize == sizeof(float)) {
+        struct gmres_ram_ctx<float> *ram_ctx = new struct gmres_ram_ctx<float>(xdim, kspace);
+        return (void*) ram_ctx;
+    }
+    return (void*) NULL;
+
+}
+
 void* create_gmres_ctx(MPI_Comm mpicomm,
                        unsigned int nranks,
                        unsigned int size,
@@ -17,7 +31,8 @@ void* create_gmres_ctx(MPI_Comm mpicomm,
                        void* datashape_in,
                        unsigned int space,
                        void* atol,
-                       void* rtol
+                       void* rtol,
+                       void* ram_ctx
                       ) {
     
     unsigned long int* soasz = (unsigned long int*) soasz_in;
@@ -25,85 +40,29 @@ void* create_gmres_ctx(MPI_Comm mpicomm,
     unsigned long int* datashape = (unsigned long int*) datashape_in;
 
     if (size == sizeof(double)) {
-        
         double at = *((double*)(atol));
         double rt = *((double*)(rtol));
-        
-        // testing mpi_common_world
-        int size, rank;
-        char pname[MPI_MAX_PROCESSOR_NAME]; int len;
-        if (mpicomm == MPI_COMM_NULL) {
-            printf("You passed MPI_COMM_NULL !!!\n");
-        }
-        MPI_Comm_size(mpicomm, &size);
-        MPI_Comm_rank(mpicomm, &rank);
-        MPI_Get_processor_name(pname, &len);
-        pname[len] = 0;
-        printf("Hello, World! I am process %d of %d on %s.\n", rank, size, pname);
-
+        struct gmres_ram_ctx<double>* ramctx = (struct gmres_ram_ctx<double>*) ram_ctx;
         struct gmres_app_ctx<double>* gctx = new gmres_app_ctx<double>(
             mpicomm, nranks,
             dim, etypes,
             soasz, 
             iodim, ioshape,
             datadim, datashape,
-            space, at, rt,
-            &allocate_ram_gmres_app_ctx<double>,
-            &deallocate_ram_gmres_app_ctx<double>,
-            &fill_nonpadding,
-            &copy_data_to_native<double>,
-            &copy_data_to_user<double>,
-            &set_reg_addr_pyfr
+            space, at, rt, ramctx
         );
-        
-        /*allocate the ram here*/
-        gctx->allocate_ram(
-            gctx->Q,   gctx->h,   gctx->v, 
-            gctx->sn,  gctx->cs,  gctx->beta, 
-            gctx->Qf,  gctx->hf,  gctx->vf, 
-            gctx->snf, gctx->csf, gctx->betaf, 
-            gctx->nonpadding,
-            gctx->xdim, 
-            gctx->kspace
-        );
-        
-        gctx->fill(
-            gctx->etypes, gctx->soasz, gctx->iodim, gctx->ioshape,
-            gctx->datadim, gctx->datashape, gctx->xdim, gctx->nonpadding
-        );
-
         return (void*) gctx;
     } else if(size == sizeof(float)) {
         float at = *((float*)(atol));
         float rt = *((float*)(rtol));
+        struct gmres_ram_ctx<float>* ramctx = (struct gmres_ram_ctx<float>*) ram_ctx;
         struct gmres_app_ctx<float>* gctx = new gmres_app_ctx<float>(
             mpicomm, nranks,
             dim, etypes,
             soasz,
             iodim, ioshape,
             datadim, datashape,
-            space, at, rt,
-            &allocate_ram_gmres_app_ctx<float>,
-            &deallocate_ram_gmres_app_ctx<float>,
-            &fill_nonpadding,
-            &copy_data_to_native<float>,
-            &copy_data_to_user<float>,
-            &set_reg_addr_pyfr
-        );
-        /*allocate the ram here*/
-        gctx->allocate_ram(
-            gctx->Q,   gctx->h,   gctx->v, 
-            gctx->sn,  gctx->cs,  gctx->beta, 
-            gctx->Qf,  gctx->hf,  gctx->vf, 
-            gctx->snf, gctx->csf, gctx->betaf, 
-            gctx->nonpadding,
-            gctx->xdim, 
-            gctx->kspace
-        );
-
-        gctx->fill(
-            gctx->etypes, gctx->soasz, gctx->iodim, gctx->ioshape,
-            gctx->datadim, gctx->datashape,  gctx->xdim, gctx->nonpadding
+            space, at, rt, ramctx
         );
         return (void*) gctx;
     }
@@ -113,37 +72,29 @@ void* create_gmres_ctx(MPI_Comm mpicomm,
 
 void clean_gmres_ctx(unsigned int size, void* input) {
     if(size == sizeof(double)) {
-        delete (struct gmres_app_ctx<double>*) input;
+        struct gmres_app_ctx<double>* gmres_ctx = (struct gmres_app_ctx<double>*) input;
+        gmres_ctx->~gmres_app_ctx();
+        delete gmres_ctx;
         return;
     } else if (size == sizeof(float)) {
-        delete (struct gmres_app_ctx<float>*) input;
+        struct gmres_app_ctx<float>* gmres_ctx = (struct gmres_app_ctx<float>*) input;
+        gmres_ctx->~gmres_app_ctx();
+        delete gmres_ctx;
         return;
     }
     return;
 }
 
 void* create_cublas_ctx( unsigned int size, void* stream_comp_0) {
-    // cast the pointer
-    
     cudaStream_t comp_stream_0 = (cudaStream_t) stream_comp_0;
-    
-    // need to launch cublas
-    struct cublas_app_ctx* bctx = 
-        new cublas_app_ctx(
-            comp_stream_0,
-            &initialize_cublas,
-            &finalize_cublas);
-    bctx->create_cublas(&bctx->handle);
-    // for each handle assign a stream to it
-    cublasSetStream(bctx->handle, bctx->stream);
-
+    struct cublas_app_ctx* bctx = new cublas_app_ctx(comp_stream_0);
     return (void*) bctx;
 }
 
 void clean_cublas_ctx(void* input) {
     // need to destroy cublas
     struct cublas_app_ctx* bctx = (struct cublas_app_ctx*) input;
-    bctx->clean_cublas(&bctx->handle);
+    bctx->~cublas_app_ctx();
     delete bctx;
     return;
 }
@@ -210,23 +161,6 @@ void gmres_solve(
     gmresSol(funcdot, solctx, gctxptr, bctxptr, icnt);
 }
 
-void* get_solve_with_frozen_krylov(unsigned int dsize) {
-    if(sizeof(double) == dsize) {
-        void (*solf) (void*, void*)  = &PreconditioningWithFrozenKrylov<double>;
-        return (void*) solf;
-    } else
-    if(sizeof(float) == dsize) {
-        void (*solf) (void*, void*)  = &PreconditioningWithFrozenKrylov<float>;
-        return (void*) solf;
-    }
-    return (void*) NULL; // something went wrong
-}
-
-void solve_with_frozen_krylov(void* funcptr, void* gctx, void* bctx)  {
-    void (*solf) (void*, void*) = 
-        (void (*) (void*,void*)) funcptr;
-    solf(gctx, bctx);
-}
 
 void print_data(void* x, unsigned long int xdim, unsigned int size) {
     if(size == sizeof(double)) {
@@ -302,38 +236,3 @@ void check_x_reg_data(void* gmres, unsigned int ne, unsigned int len, unsigned i
     }
 }
 
-void check_curr_reg_data(void* gmres, unsigned int ne, unsigned int len, unsigned int dsize) {
-    if(dsize == sizeof(double)) {
-        struct gmres_app_ctx<double>* gctx = (struct gmres_app_ctx<double>*) (gmres);
-        print_data_wrapper<double> (reinterpret_cast<double*>(gctx->curr_reg[ne]), len);   
-    } else {
-        struct gmres_app_ctx<float>* gctx  = (struct gmres_app_ctx<float>*) (gmres);
-        print_data_wrapper<float> (reinterpret_cast<float*>(gctx->curr_reg[ne]), len); 
-    }
-}
-
-void dot_c_reg(void* gmres, void* cublas, unsigned int dsize) {
-    struct cublas_app_ctx* bctx = (struct cublas_app_ctx*) (cublas);
-    if(dsize == sizeof(double)) {
-        double dotproduct = 0.0;
-        mGPU_dot_creg_wrapper<double>(gmres, &dotproduct, bctx->handle);
-        printf("inner product is %lf\n", dotproduct);
-    } else {
-        float dotproduct = 0.0;
-        mGPU_dot_creg_wrapper<float>(gmres, &dotproduct, bctx->handle);
-        printf("inner product is %f\n", dotproduct);
-    }
-}
-
-void dot_b_reg(void* gmres, void* cublas, unsigned int dsize) {
-    struct cublas_app_ctx* bctx = (struct cublas_app_ctx*) (cublas);
-    if(dsize == sizeof(double)) {
-        double dotproduct = 0.0;
-        mGPU_dot_breg_wrapper<double>(gmres, &dotproduct, bctx->handle);
-        printf("inner product is %lf\n", dotproduct);
-    } else {
-        float dotproduct = 0.0;
-        mGPU_dot_breg_wrapper<float>(gmres, &dotproduct, bctx->handle);
-        printf("inner product is %f\n", dotproduct);
-    }
-}

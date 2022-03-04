@@ -84,7 +84,6 @@ void fill_nonpadding(unsigned int etype,
     free(hnopad);
 }
 
-
 /*setting the address of b vector on PyFR side*/
 void set_reg_addr_pyfr(
     unsigned long long int* input, // input
@@ -95,5 +94,3 @@ void set_reg_addr_pyfr(
         output[ie] = input[ie];
     }
 }
-
-

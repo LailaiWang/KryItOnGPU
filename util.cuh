@@ -2,6 +2,7 @@
 #define __UTIL__CUH__
 
 #include <iostream>
+#include <vector>
 #include "cuda_runtime.h"
 #include <cmath>
 #include <math.h>
@@ -17,6 +18,12 @@ if ( cudaSuccess != result )            \
     std::cerr << "CUDA error " << result << " in " << __FILE__ << ":" << __LINE__ << ": " << cudaGetErrorString( result ) << " (" << #call << ")" << std::endl;  \
 }
 
+template<typename T>
+std::vector<T> view_content(T* input, unsigned int cnts) {
+	std::vector<T> output(cnts, 0);
+	CUDA_CALL(cudaMemcpy(output.data(), input, sizeof(T) * cnts, cudaMemcpyDeviceToHost));
+	return output;
+}
 
 template<typename T>
 __global__
@@ -41,6 +48,32 @@ void copy_array(T* dst, T* src, T scale, unsigned long int xdim) {
     unsigned long int idx = blockIdx.x*blockDim.x + threadIdx.x;
     if(idx >= xdim) return;
     dst[idx] = scale*src[idx];
+}
+
+template<typename T>
+__global__
+void copy_array(T* dst, T* src, T *scale, unsigned long int xdim) {
+    unsigned long int idx = blockIdx.x*blockDim.x + threadIdx.x;
+    if(idx >= xdim) return;
+    dst[idx] = *scale*src[idx];
+}
+
+template<typename T>
+__global__
+void gpuSqrt(T* val) {
+    *val = sqrt(*val);
+}
+
+template<typename T>
+__global__
+void accumulate_by_one(T* base, T* src) {
+    *base += *src;
+}
+
+template<typename T>
+__global__
+void gpuReciprocal(T* val, T* valr) {
+    *valr = (T)1.0/(*val);
 }
 
 template<typename T>

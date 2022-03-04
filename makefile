@@ -38,10 +38,10 @@ INCDIR = $(CURDIR)
 
 LDFLAGS = 
 
-OBJECTS=$(BINDIR)/main.o $(BINDIR)/drive1.o  $(BINDIR)/cublas_ctx.o \
+OBJECTS=$(BINDIR)/main.o $(BINDIR)/drive1.o  \
         $(BINDIR)/gmres_ctx.o  $(BINDIR)/kryit_interface.o $(BINDIR)/util.o
 
-SOBJS = $(BINDIR)/cublas_ctx.o $(BINDIR)/gmres_ctx.o $(BINDIR)/kryit_interface.o \
+SOBJS = $(BINDIR)/gmres_ctx.o $(BINDIR)/kryit_interface.o \
         $(BINDIR)/util.o
 
 # create a shared library

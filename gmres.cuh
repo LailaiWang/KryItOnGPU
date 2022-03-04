@@ -80,50 +80,19 @@ void set_zero_wrapper(T* x, unsigned long int xdim, cudaStream_t stream) {
     }
 }
 
-/* \fn norm2 of input vector vec
- */
-template<typename T> 
-void mGPU_norm2_wrapper(cublasHandle_t handle,
-                        unsigned long int xdim,
-                        T* vec,
-                        T* vnorm,
-                        MPI_Comm comm) {
-    T localnorm;
-    if constexpr (std::is_same<float,T>::value) {
-        cublasSdot(handle, xdim, vec, 1, vec, 1, &localnorm);
-    } else 
-    if constexpr (std::is_same<double, T>:: value) {
-        cublasDdot(handle, xdim, vec, 1, vec, 1, &localnorm);
-    }
-
-    MPI_Datatype dtype = MPI_DATATYPE_NULL;
-
-    if constexpr (std::is_same<float, T>::value) {
-        dtype = MPI_FLOAT;
-    } else 
-    if constexpr (std::is_same<double, T>::value){
-        dtype = MPI_DOUBLE;
-    } 
-    // sum value into bnorm[1]
-    MPI_Allreduce(&localnorm, vnorm, 1, dtype, MPI_SUM, comm);
-    *vnorm = std::sqrt(*vnorm);
-    return;
-}
-
 /* \fn dot product of input vector avec and bvec
  */
 template<typename T>
 void mGPU_dot_wrapper(cublasHandle_t handle, 
                       unsigned long int xdim,
                       T* avec, T* bvec, 
-                      T* vdot,
+                      T* vdot, T* localnorm,
                       MPI_Comm comm) {
-    T localnorm;
     if constexpr (std::is_same<float,T>::value) {
-        cublasSdot(handle, xdim, avec, 1, bvec, 1, &localnorm);
+        cublasSdot(handle, xdim, avec, 1, bvec, 1, localnorm);
     } else 
     if constexpr (std::is_same<double, T>:: value) {
-        cublasDdot(handle, xdim, avec, 1, bvec, 1, &localnorm);
+        cublasDdot(handle, xdim, avec, 1, bvec, 1, localnorm);
     }
 
     MPI_Datatype dtype = MPI_DATATYPE_NULL;
@@ -138,13 +107,15 @@ void mGPU_dot_wrapper(cublasHandle_t handle,
     return;
 }
 
+
 /*wrapper to compute the norm of discontinuous data on user side*/
 template<typename T>
-void mGPU_dot_breg_wrapper(void* gctx, T* dotval, cublasHandle_t handle) {
+void mGPU_dot_breg_wrapper(void* gctx, T* dotval, T* temp, 
+                           cublasHandle_t handle, cudaStream_t stream) {
     struct gmres_app_ctx<T>* gmres_ctx = (struct gmres_app_ctx<T>*) (gctx);
     unsigned int etype = gmres_ctx->etypes;
     unsigned int datadim = gmres_ctx->datadim;
-    T sum = 0;
+
     for(unsigned int ie=0;ie<etype;ie++) {
         unsigned long int dimpertype = 1;
         for(unsigned int id=0;id<datadim;id++) {
@@ -153,15 +124,16 @@ void mGPU_dot_breg_wrapper(void* gctx, T* dotval, cublasHandle_t handle) {
         
         T* b = reinterpret_cast<T*> (gmres_ctx->b_reg[ie]);
         
-        T localnorm = 0;
         if constexpr (std::is_same<float,T>::value) {
-            cublasSdot(handle, dimpertype, b, 1, b, 1, &localnorm);
+            cublasSdot(handle, dimpertype, b, 1, b, 1, temp+ie);
         } else 
         if constexpr (std::is_same<double, T>:: value) {
-            cublasDdot(handle, dimpertype, b, 1, b, 1, &localnorm);
+            cublasDdot(handle, dimpertype, b, 1, b, 1, temp+ie);
         }
 
-        sum += localnorm;
+        if(ie != 0) { /*add to temp[0]*/
+            accumulate_by_one<T><<<1,1,0, stream>>>(temp, temp+ie);
+        }
     }
 
     MPI_Datatype dtype = MPI_DATATYPE_NULL;
@@ -171,18 +143,19 @@ void mGPU_dot_breg_wrapper(void* gctx, T* dotval, cublasHandle_t handle) {
     if constexpr (std::is_same<double, T>::value){
         dtype = MPI_DOUBLE;
     } 
-    MPI_Allreduce(&sum, dotval, 1, dtype, MPI_SUM, gmres_ctx->mpicomm);
+    MPI_Allreduce(temp, dotval, 1, dtype, MPI_SUM, gmres_ctx->mpicomm);
     return;
 
 }
 
 /*wrapper to compute the norm of discontinuous data on user side*/
 template<typename T>
-void mGPU_dot_creg_wrapper(void* gctx, T* dotval, cublasHandle_t handle) {
+void mGPU_dot_creg_wrapper(void* gctx, T* dotval, T* temp,
+                           cublasHandle_t handle, cudaStream_t stream) {
     struct gmres_app_ctx<T>* gmres_ctx = (struct gmres_app_ctx<T>*) (gctx);
     unsigned int etype = gmres_ctx->etypes;
     unsigned int datadim = gmres_ctx->datadim;
-    T sum = 0;
+
     for(unsigned int ie=0;ie<etype;ie++) {
         unsigned long int dimpertype = 1;
         for(unsigned int id=0;id<datadim;id++) {
@@ -193,13 +166,16 @@ void mGPU_dot_creg_wrapper(void* gctx, T* dotval, cublasHandle_t handle) {
         
         T localnorm = 0;
         if constexpr (std::is_same<float,T>::value) {
-            cublasSdot(handle, dimpertype, b, 1, b, 1, &localnorm);
+            cublasSdot(handle, dimpertype, b, 1, b, 1, temp+ie);
         } else 
         if constexpr (std::is_same<double, T>:: value) {
-            cublasDdot(handle, dimpertype, b, 1, b, 1, &localnorm);
+            cublasDdot(handle, dimpertype, b, 1, b, 1, temp+ie);
         }
 
-        sum += localnorm;
+        if(ie != 0) { /*add to temp[0]*/
+            accumulate_by_one<T><<<1,1,0, stream>>>(temp, temp+ie);
+        }
+
     }
 
     MPI_Datatype dtype = MPI_DATATYPE_NULL;
@@ -210,7 +186,7 @@ void mGPU_dot_creg_wrapper(void* gctx, T* dotval, cublasHandle_t handle) {
     if constexpr (std::is_same<double, T>::value){
         dtype = MPI_DOUBLE;
     } 
-    MPI_Allreduce(&sum, dotval, 1, dtype, MPI_SUM, gmres_ctx->mpicomm);
+    MPI_Allreduce(temp, dotval, 1, dtype, MPI_SUM, gmres_ctx->mpicomm);
     return;
 }
 
@@ -258,12 +234,20 @@ void MFgmres(
 
     T error  = 0.0; /*residual*/
     T error0 = 0.0; 
-
-    T bnorm, rnorm;
     
+    /*use some preallocated ram*/
+    T* bnorm = beta+kspace+1;
+    T* rnorm = beta+kspace+2;
+    T* loc   = beta+kspace+3;
+    
+    T  bnorm_h, rnorm_h;
+
     /*compute the norm of b vector, we do not store b in gmres ctx, b is on PyFR*/
-    mGPU_dot_breg_wrapper<T>(gtx, &bnorm, blas_ctx->handle);
-    bnorm = std::sqrt(bnorm);
+    mGPU_dot_breg_wrapper<T>(gtx, bnorm, loc, blas_ctx->handle[0], blas_ctx->stream);
+    /*take sqaure root of bnorm*/
+    gpuSqrt<T><<<1,1,0,blas_ctx->stream>>>(bnorm);
+    
+    cudaMemcpy(&bnorm_h, bnorm, sizeof(T), cudaMemcpyDeviceToHost);
 
     /*set up the initial value*/
     set_zero_wrapper(v,   xdim, blas_ctx->stream);   
@@ -277,7 +261,7 @@ void MFgmres(
     
     set_zero_wrapper(sn,   kspace+1, blas_ctx->stream);   /*initialization to 0*/
     set_zero_wrapper(cs,   kspace+1, blas_ctx->stream);
-    set_zero_wrapper(beta, kspace+11,blas_ctx->stream);
+    set_zero_wrapper(beta, kspace+1, blas_ctx->stream);   /*do not cross boundary*/
 
     /*copy the initial guess to the current reg bank in PyFR*/
     gmres_ctx->copy_to_user(
@@ -294,9 +278,13 @@ void MFgmres(
     
     /* compute the norm of r = b - Ax */
     /* for initial guess x = 0, for restart x != 0*/
-    mGPU_norm2_wrapper<T>(blas_ctx->handle, xdim, Q, &rnorm, gmres_ctx->mpicomm);
+    mGPU_dot_wrapper<T>(blas_ctx->handle[0], xdim, Q, Q, rnorm, loc, gmres_ctx->mpicomm);
     
-    error = rnorm/bnorm;
+    /*take sqrt of rnorm*/
+    gpuSqrt<T><<<1,1,0,blas_ctx->stream>>>(rnorm);
+    
+    cudaMemcpy(&rnorm_h, rnorm, sizeof(T), cudaMemcpyDeviceToHost);
+    error = (T) rnorm_h/bnorm_h;
 
     if (restart == false ) error0 = error; /*only update error0 at the very beginning*/
     
@@ -308,17 +296,18 @@ void MFgmres(
         return;
     }
 
-    /*setting up initial beta vector*/
-    cudaMemcpy(beta, &rnorm, sizeof(T), cudaMemcpyHostToDevice);
+    /*setting up initial beta vector, sync calling*/
+    cudaMemcpy(beta, rnorm, sizeof(T), cudaMemcpyDeviceToDevice);
+    
+    T* rnormi = beta+kspace+3;
+    gpuReciprocal<<<1,1,0,blas_ctx->stream>>>(rnorm, rnormi);
 
     /*normalize Q*/
     if constexpr (std::is_same<float, T>::value) {
-        float rnormi = 1.0f/rnorm;
-        cublasSscal(blas_ctx->handle, xdim, &rnormi, Q, 1);
+        cublasSscal(blas_ctx->handle[0], xdim, rnormi, Q, 1);
     } else
     if constexpr (std::is_same<double, T>::value){
-        double rnormi = 1.0/rnorm;
-        cublasDscal(blas_ctx->handle, xdim, &rnormi, Q, 1);
+        cublasDscal(blas_ctx->handle[0], xdim, rnormi, Q, 1);
     }
     
     for(unsigned int k=1;k<kspace+1;k++) {
@@ -337,45 +326,39 @@ void MFgmres(
             gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape, blas_ctx->stream
         );
 
+        T* tmp = beta+kspace+3;
+        T* loctmp = beta+kspace+4;
         for(unsigned int j=0;j<k;j++) {
             T* hjk = h+j+(k-1)*(kspace+1);
             T* Qj  = Q+xdim*j;
-            T htmp = 0.0;
 
-            mGPU_dot_wrapper<T>(blas_ctx->handle, xdim, v, Qj, &htmp, gmres_ctx->mpicomm);
+            mGPU_dot_wrapper<T>(blas_ctx->handle[0],xdim,v,Qj,tmp,loctmp,gmres_ctx->mpicomm);
 
-            cudaMemcpy(hjk, &htmp, sizeof(T), cudaMemcpyHostToDevice);
+            cudaMemcpy(hjk, tmp, sizeof(T), cudaMemcpyDeviceToDevice);
             
-            htmp *= -1.0;
+            copy_array<<<1,1,0,blas_ctx->stream>>>(tmp, tmp, (T)(-1.0), 1);
 
             if constexpr (std::is_same<float, T>::value) {
                 /* update v = v-hjk*Qj */
-                cublasSaxpy(blas_ctx->handle, xdim, &htmp, Qj, 1, v, 1);
+                cublasSaxpy(blas_ctx->handle[0], xdim, tmp, Qj, 1, v, 1);
             } else 
             if constexpr (std::is_same<double,T>::value) {
                 /* update v = v-hjk*Qj */
-                cublasDaxpy(blas_ctx->handle, xdim, &htmp, Qj, 1, v, 1);
+                cublasDaxpy(blas_ctx->handle[0], xdim, tmp, Qj, 1, v, 1);
             }
 
         }
         /* update h(k+1,k) */
         T* hkp1k = h+k+(k-1)*(kspace+1);
-        T vnorm;
-        
-        mGPU_norm2_wrapper(blas_ctx->handle, xdim, v, &vnorm, gmres_ctx->mpicomm);
-
-        if(std::isnan(vnorm)) {
-            gmres_ctx->convrson = GMRES_DIV;
-            return;
-        }
-
-        T* Qkp1  = Q+xdim*k;
-
-        // copy the value to vnorm
-        cudaMemcpy(hkp1k, &vnorm, sizeof(T), cudaMemcpyHostToDevice);
+        mGPU_dot_wrapper(blas_ctx->handle[0], xdim, v, v, tmp, loctmp, gmres_ctx->mpicomm);
+        gpuSqrt<T><<<1,1,0,blas_ctx->stream>>>(tmp);
+        cudaMemcpy(hkp1k, tmp, sizeof(T), cudaMemcpyHostToDevice);
         
         /*normalize v*/
-        copy_array<<<nblocks,256,0,blas_ctx->stream>>>(Qkp1, v, (T)1.0/vnorm, xdim);
+        T* Qkp1  = Q+xdim*k;
+
+        gpuReciprocal<T><<<1,1,0,blas_ctx->stream>>>(tmp, tmp);
+        copy_array<<<nblocks,256,0,blas_ctx->stream>>>(Qkp1, v, tmp, xdim);
 
         /*apply givens rotation for first k items*/
         /* input x <----- h0j*/
@@ -395,7 +378,7 @@ void MFgmres(
 
         cudaMemcpy(&error, beta+k, sizeof(T), cudaMemcpyDeviceToHost);
         
-        error = std::fabs(error)/bnorm;
+        error = std::fabs(error)/bnorm_h;
         
         cnt += 1;
         gmres_ctx->conv_iters += 1;
@@ -425,30 +408,30 @@ void MFgmres(
     } else {
         restart = false;
     }
-
+    
     /*calling solver to solve the triangular linear system*/
     if constexpr (std::is_same<float,  T>::value) {
         cublasStrsm(    
-            blas_ctx->handle,
+            blas_ctx->handle[0],
             CUBLAS_SIDE_LEFT,
             CUBLAS_FILL_MODE_UPPER, 
             CUBLAS_OP_N,
             CUBLAS_DIAG_NON_UNIT,
             cnt,1,
-            &P_1F,
+            &gmres_ctx->abys[0], // positive 1
             h, kspace+1,
             beta, cnt 
         );
     } else 
     if constexpr (std::is_same<double, T>::value) {
         cublasDtrsm(    
-            blas_ctx->handle,
+            blas_ctx->handle[0],
             CUBLAS_SIDE_LEFT,
             CUBLAS_FILL_MODE_UPPER, 
             CUBLAS_OP_N,
             CUBLAS_DIAG_NON_UNIT,
             cnt,1,
-            &P_1D,
+            &gmres_ctx->abys[0], // positive 1
             h, kspace+1,
             beta, cnt 
         );
@@ -473,114 +456,10 @@ void MFgmres(
        gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape, blas_ctx->stream
     );
     
-    /*For the first pseudo iteration, backup the krylov space*/
-    if(icnt == 0) {
-        T* Qf  = gmres_ctx->Qf;
-        T* hf  = gmres_ctx->hf;
-        T* snf = gmres_ctx->snf;
-        T* csf = gmres_ctx->csf;
-        nblocks = std::ceil((T)xdim*(kspace+1)/256);
-        copy_array<<<nblocks, 256, 0, blas_ctx->stream>>>(Qf,  Q,  (T)1.0, xdim*(kspace+1));
-        nblocks = std::ceil((T) kspace*(kspace+1)/256);
-        copy_array<<<nblocks, 256, 0, blas_ctx->stream>>>(hf,  h,  (T)1.0, kspace*(kspace+1));
-        nblocks = std::ceil((T)(kspace+1)/256);
-        copy_array<<<nblocks, 256, 0, blas_ctx->stream>>>(snf, sn, (T)1.0, kspace+1);
-        copy_array<<<nblocks, 256, 0, blas_ctx->stream>>>(csf, cs, (T)1.0, kspace+1);
-        /*no need to copy vf and betaf*/
-    }
     /*synchronize our stream before we return back to PyFR*/
     cudaStreamSynchronize(blas_ctx->stream);
     return;
 }
 
-/*
- * \fn function for the preconditioner with freezed krylov subspaces
- * (I/Δt+I/Δτ-a_ii ∂ R/ ∂ q) Y = X
- * (I/Δt + I/Δτ + I/Δτ* - a_ii ∂ R/ ∂ q)Y = R - (I/Δt + I/Δτ ) q +
- *                                          X - a_ii R_0 + (I/Δt + I/Δτ ) q 
- * Let Δτ* = 0,
- * PY = R - (I/Δt + I/Δτ ) q + SRC(X) = b*
- * If just one iteration PY = b*
- * Consider frozen Kylov subspace vectors [v_0, v_1, ..., v_k]
- * We can use these frozen vectors, apply givens rotation to new || b* ||e_1
- * Resolve the triangluar system
- */
-template<typename T>
-void  PreconditioningWithFrozenKrylov(void* gtx, void* btx) {
-
-    struct gmres_app_ctx<T>* gmres_ctx = (struct gmres_app_ctx<T>*) (gtx);
-    struct cublas_app_ctx* blas_ctx = (struct cublas_app_ctx*) (btx);
-    
-    unsigned long int xdim = gmres_ctx->xdim;
-    unsigned int kspace = gmres_ctx->kspace;
-
-    T* sn   = gmres_ctx->snf;
-    T* cs   = gmres_ctx->csf;
-    T* beta = gmres_ctx->betaf;
-
-    T* Q = gmres_ctx->Qf;
-    T* h = gmres_ctx->hf;
-    T* v = gmres_ctx->vf;
-
-    /*evaluate the norm*/
-    T vnorm;
-    mGPU_dot_creg_wrapper(gtx, &vnorm, blas_ctx->handle);
-    vnorm = std::sqrt(vnorm);
-    /*copy this value to beta*/
-    cudaMemcpy(beta, &vnorm, sizeof(T), cudaMemcpyHostToDevice);
-    /*rotate beta*/
-    for(unsigned int k=1;k<kspace+1;k++) {
-        /* apply givens rotation to corresponding beta  since the last is 0 */
-        /* beta (k+1) = -sn(k)*beta(k) */
-        /* beta (k  ) =  cs(k)*beta(k) */
-        dot_one<T><<<1,1,0,blas_ctx->stream>>>(sn+k-1, beta+k-1, beta+k,  -1.0);
-        dot_one<T><<<1,1,0,blas_ctx->stream>>>(cs+k-1, beta+k-1, beta+k-1, 1.0);
-    }
-
-    /*resolve the linear system*/
-    /*calling solver to solve the triangular linear system*/
-    if constexpr (std::is_same<float,  T>::value) {
-        cublasStrsm(    
-            blas_ctx->handle,
-            CUBLAS_SIDE_LEFT,
-            CUBLAS_FILL_MODE_UPPER, 
-            CUBLAS_OP_N,
-            CUBLAS_DIAG_NON_UNIT,
-            kspace,1,
-            &P_1F,
-            h, kspace+1,
-            beta,  kspace
-        );
-    } else 
-    if constexpr (std::is_same<double, T>::value) {
-        cublasDtrsm(    
-            blas_ctx->handle,
-            CUBLAS_SIDE_LEFT,
-            CUBLAS_FILL_MODE_UPPER, 
-            CUBLAS_OP_N,
-            CUBLAS_DIAG_NON_UNIT,
-            kspace,1,
-            &P_1D,
-            h, kspace+1,
-            beta, kspace 
-        );
-    }
-
-    /*get the solution*/
-    set_zero_wrapper(v,   xdim, blas_ctx->stream);   
-    unsigned long int blocks = std::ceil((T) xdim/256);
-    for(unsigned int k=0;k<kspace;k++) {
-        get_soln<<<blocks,256,0,blas_ctx->stream>>>(beta+k, v, Q+k*xdim, xdim);
-    }
-    
-    /*curr reg is the place where the preconditioned vector stored*/
-    gmres_ctx->copy_to_user(
-       gmres_ctx->curr_reg, reinterpret_cast<unsigned long long int> (v), 
-       gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape, blas_ctx->stream
-    );
-    /*synchronize our stream before we return back to PyFR*/
-    cudaStreamSynchronize(blas_ctx->stream);
-    return;
-}
 
 #endif
