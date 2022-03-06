@@ -3,6 +3,8 @@
 
 #include "cuda_runtime.h"
 #include "util.cuh"
+#include "pade_expm.cuh"
+
 
 #include "mpi.h"
 #include "mpi-ext.h"
@@ -24,6 +26,7 @@ void allocate_ram_gmres_app_ctx(
         unsigned long int xdim, unsigned int kspace
 ){
     
+    kspace = kspace * 10; // allocate extra incase sublevels using more kspace
     CUDA_CALL(cudaMalloc((void **) &Q,    sizeof(T)*xdim*(kspace+1));)
     CUDA_CALL(cudaMalloc((void **) &v,    sizeof(T)*xdim);)
     CUDA_CALL(cudaMalloc((void **) &h,    sizeof(T)*kspace*(kspace+1));)
@@ -32,7 +35,6 @@ void allocate_ram_gmres_app_ctx(
     CUDA_CALL(cudaMalloc((void **) &cs,   sizeof(T)*(kspace+1));)
     CUDA_CALL(cudaMalloc((void **) &beta, sizeof(T)*(kspace+11));)
 
-    printf("done ram allocate\n");
 }
 
 template<typename T>
@@ -150,6 +152,8 @@ struct gmres_app_ctx {
     T* beta; /*last 10 for temp operation on GPU*/
     
     struct gmres_ram_ctx<T>* ram_ctx;
+    struct expm_ctx_ram<T>* expmram_ctx;
+    struct expm_ctx<T>* expmctx;
 
     void (*fill) (unsigned int, unsigned long int*, 
                   unsigned int, unsigned long int*,
@@ -244,6 +248,74 @@ struct gmres_app_ctx {
         fill(etypes, soasz, iodim, ioshape, datadim, datashape, xdim, nonpadding);
     };
     
+    /*constructor for exponential integrator*/
+    gmres_app_ctx(MPI_Comm mpicom_in,
+                  unsigned int nranks_in,
+                  unsigned long int dim,
+                  unsigned int etypes_in,
+                  unsigned long int* soasz_in,
+                  unsigned int iodim_in,
+                  unsigned long int* ioshape_in,
+                  unsigned int datadim_in,
+                  unsigned long int* datashape_in,
+                  unsigned int space,
+                  T at, T rt,
+                  void* ram_ctx_in,
+                  void* expmram_ctx_in,
+                  void* expmctx_in
+    ) {
+        mpicomm = mpicom_in;
+        nranks = nranks_in;
+        xdim   = dim; // dimension of the problem // not continuous due to alignment
+        etypes = etypes_in;
+    
+        for(unsigned int i=0;i<2;i++) {
+            soasz[i] = soasz_in[i];
+        }
+
+        iodim = iodim_in;
+        for(unsigned int i=0;i<iodim*etypes;i++) {
+            ioshape[i] = ioshape_in[i];
+        }
+
+        datadim = datadim_in;
+        for(unsigned int i=0;i<datadim*etypes;i++) {
+            datashape[i] = datashape_in[i];
+        }
+
+        kspace = space;
+        atol   = at;
+        rtol   = rt;
+        
+        /*assign the pointers to actual ram*/
+        ram_ctx = (struct gmres_ram_ctx<T>*) ram_ctx_in;
+        expmram_ctx = (struct expm_ctx_ram<T>*) expmram_ctx_in;
+        expmctx = (struct expm_ctx<T>*) expmctx_in;
+
+        Q = ram_ctx->Q;
+        h = ram_ctx->h;
+        v = ram_ctx->v;
+
+        sn = ram_ctx->sn;
+        cs = ram_ctx->cs;
+        beta = ram_ctx->beta;
+        
+        copy_to_native = &copy_data_to_native<T>;
+        copy_to_user   = &copy_data_to_user<T>;
+        
+        _view_content = &view_content<T>;
+
+        fill           = &fill_nonpadding;
+        set_reg_addr   = &set_reg_addr_pyfr;
+
+        /*push some coefficients to GPU*/
+        T alps []= {(T) 1.0, (T) 0.0, (T) -1.0};
+        cudaMalloc((void**)&abys, sizeof(T)*64);
+        cudaMemcpy(abys, alps, sizeof(T)*3, cudaMemcpyHostToDevice);
+        
+        /*bool for if a entry in the array is for padding or not*/
+        fill(etypes, soasz, iodim, ioshape, datadim, datashape, xdim, nonpadding);
+    };
     /*a small destrutor*/
     ~gmres_app_ctx() {
         /*clean the ram*/

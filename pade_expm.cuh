@@ -6,7 +6,7 @@
 #include <vector>
 #include <type_traits>
 #include <iostream>
-#include "util.h"
+#include "util.cuh"
 
 template<typename T>
 T factorial(T input) {
@@ -46,7 +46,12 @@ void fill_testing_matrix(T* mat, unsigned int dim) {
 }
 
 template<typename T>
-void triInverse_wrapper(T* mat, T* buffer, unsigned int dim, cublasHandle_t handle, T** &Abuf, T** &Ainvbuf) {
+void triInverse_wrapper(T* mat, 
+                        T* buffer,
+                        unsigned int dim, 
+                        cublasHandle_t handle,
+                        T** &Abuf,
+                        T** &Ainvbuf) {
 	int* info = (int*)(buffer + dim * dim);
 	int* pivot = info + dim * dim;
 	cudaMemcpy(Abuf, &mat, sizeof(T*), cudaMemcpyHostToDevice);
@@ -54,12 +59,10 @@ void triInverse_wrapper(T* mat, T* buffer, unsigned int dim, cublasHandle_t hand
 	if constexpr (std::is_same<T, double>::value) {
 		cublasDgetrfBatched(handle, dim, Abuf, dim, pivot, info, 1);
 		cublasDgetriBatched(handle, dim, Abuf, dim, pivot, Ainvbuf, dim, info, 1);
-		//cublasDmatinvBatched(handle, dim, Abuf, dim, Ainvbuf, dim, info, 1);
 	} else 
 	if constexpr (std::is_same<T, float>::value) {
 		cublasSgetrfBatched(handle, dim, Abuf, dim, pivot, info, 1);
 		cublasSgetriBatched(handle, dim, Abuf, dim, pivot, Ainvbuf, dim, info, 1);
-		//cublasSmatinvBatched(handle, dim, Abuf, dim, Ainvbuf, dim, info, 1);
 	}
 }
 
@@ -73,6 +76,7 @@ void set_identity(T* mat, unsigned int dim) {
 	if (m == n) mat[m * dim + n] = (T)1.0f;
 	if (m != n) mat[m * dim + n] = (T)0.0f;
 }
+
 /*
  * With Krylov approximation, these mats are small mats, we can indulge ourselves of 
  * allocating or reusing the space from somewhere else for this.
@@ -306,37 +310,15 @@ void eval_matrix_exponential(T* mat,    // the matrix as well as the output
 
 	}
 }
-/*
- * In this subroutine we do the matrix vector product first
- */
-template<typename T>
-void expm_mul_e1_wrapper(T* expm, T* e1, unsigned int kspace, cublasHandle_t handle) {
-	if constexpr (std::is_same<double, T>::value) {
-
-	} else
-	if constexpr (std::is_same<float, T>::value){
-
-	}
-}
-
-/*
- * In this subroutine we do the matrix vector product (krylov subspace matrix [v_0, v_1, ..., v_m]) 
- */
-template<typename T>
-void krylov_mul_expm_wrapper(T* Q, T* expm) {
-	if constexpr (std::is_same<double, T>::value) {
-
-	} else
-	if constexpr (std::is_same<float, T>::value){
-
-	}
-}
 
 template<typename T>
 void alloc_expm_ram(unsigned int p, unsigned int dim, T* &buffer, T* &padecoef_d, char* &aby) {
 	/*try to align our data*/
 	unsigned int soasz = 32;
 	unsigned int nbufs = 0;
+
+    dim = dim*10;
+
 	nbufs = soasz* std::ceil((T)((p + 1) * (dim * dim)) / soasz);
 	cudaMalloc((void**)&buffer, sizeof(T) * nbufs);
 	nbufs = soasz*std::ceil((T)((p+1))/soasz);

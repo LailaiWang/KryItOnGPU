@@ -87,6 +87,7 @@ void mGPU_dot_wrapper(cublasHandle_t handle,
                       unsigned long int xdim,
                       T* avec, T* bvec, 
                       T* vdot, T* localnorm,
+                      cudaStream_t stream,
                       MPI_Comm comm) {
     if constexpr (std::is_same<float,T>::value) {
         cublasSdot(handle, xdim, avec, 1, bvec, 1, localnorm);
@@ -94,7 +95,8 @@ void mGPU_dot_wrapper(cublasHandle_t handle,
     if constexpr (std::is_same<double, T>:: value) {
         cublasDdot(handle, xdim, avec, 1, bvec, 1, localnorm);
     }
-
+    
+    cudaStreamSynchronize(stream);
     MPI_Datatype dtype = MPI_DATATYPE_NULL;
 
     if constexpr (std::is_same<float, T>::value) {
@@ -103,7 +105,16 @@ void mGPU_dot_wrapper(cublasHandle_t handle,
     if constexpr (std::is_same<double, T>::value){
         dtype = MPI_DOUBLE;
     } 
-    MPI_Allreduce(&localnorm, vdot, 1, dtype, MPI_SUM, comm);
+
+    if (MPIX_Query_cuda_support()) {
+        MPI_Allreduce(&localnorm, vdot, 1, dtype, MPI_SUM, comm);
+    } else {
+        /*mpi not cuda aware*/
+        T local = 0, global = 0;
+        cudaMemcpy(&local, localnorm, sizeof(T), cudaMemcpyDeviceToHost);
+        MPI_Allreduce(&local, &global, 1, dtype, MPI_SUM, comm);
+        cudaMemcpy(vdot, &global, sizeof(T), cudaMemcpyHostToDevice);
+    }
     return;
 }
 
@@ -135,7 +146,8 @@ void mGPU_dot_breg_wrapper(void* gctx, T* dotval, T* temp,
             accumulate_by_one<T><<<1,1,0, stream>>>(temp, temp+ie);
         }
     }
-
+    
+    cudaStreamSynchronize(stream);
     MPI_Datatype dtype = MPI_DATATYPE_NULL;
     if constexpr (std::is_same<float, T>::value) {
         dtype = MPI_FLOAT;
@@ -143,7 +155,16 @@ void mGPU_dot_breg_wrapper(void* gctx, T* dotval, T* temp,
     if constexpr (std::is_same<double, T>::value){
         dtype = MPI_DOUBLE;
     } 
-    MPI_Allreduce(temp, dotval, 1, dtype, MPI_SUM, gmres_ctx->mpicomm);
+    
+    if (MPIX_Query_cuda_support()) {
+        MPI_Allreduce(temp, dotval, 1, dtype, MPI_SUM, gmres_ctx->mpicomm);
+    } else {
+        /*not cuda aware, then we have to copy them to the host*/
+        T local = 0, global = 0;
+        cudaMemcpy(&local, temp, sizeof(T), cudaMemcpyDeviceToHost);
+        MPI_Allreduce(&local, &global, 1, dtype, MPI_SUM, gmres_ctx->mpicomm);
+        cudaMemcpy(dotval, &global, sizeof(T), cudaMemcpyHostToDevice);
+    }
     return;
 
 }
@@ -177,6 +198,8 @@ void mGPU_dot_creg_wrapper(void* gctx, T* dotval, T* temp,
         }
 
     }
+    
+    cudaStreamSynchronize(stream);
 
     MPI_Datatype dtype = MPI_DATATYPE_NULL;
 
@@ -186,7 +209,15 @@ void mGPU_dot_creg_wrapper(void* gctx, T* dotval, T* temp,
     if constexpr (std::is_same<double, T>::value){
         dtype = MPI_DOUBLE;
     } 
-    MPI_Allreduce(temp, dotval, 1, dtype, MPI_SUM, gmres_ctx->mpicomm);
+    if (MPIX_Query_cuda_support()) {
+        MPI_Allreduce(temp, dotval, 1, dtype, MPI_SUM, gmres_ctx->mpicomm);
+    } else {
+        /*mpi not cuda-aware*/
+        T local = 0, global = 0;
+        cudaMemcpy(&local, temp, sizeof(T), cudaMemcpyDeviceToHost);
+        MPI_Allreduce(&local, &global, 1, dtype, MPI_SUM, gmres_ctx->mpicomm);
+        cudaMemcpy(dotval, &global, 1, sizeof(T), cudaMemcpyHostToDevice);
+    }
     return;
 }
 
@@ -278,12 +309,14 @@ void MFgmres(
     
     /* compute the norm of r = b - Ax */
     /* for initial guess x = 0, for restart x != 0*/
-    mGPU_dot_wrapper<T>(blas_ctx->handle[0], xdim, Q, Q, rnorm, loc, gmres_ctx->mpicomm);
+    mGPU_dot_wrapper<T>(blas_ctx->handle[0], xdim, Q, Q, rnorm, loc, 
+                        blas_ctx->stream,  gmres_ctx->mpicomm);
     
     /*take sqrt of rnorm*/
     gpuSqrt<T><<<1,1,0,blas_ctx->stream>>>(rnorm);
     
     cudaMemcpy(&rnorm_h, rnorm, sizeof(T), cudaMemcpyDeviceToHost);
+
     error = (T) rnorm_h/bnorm_h;
 
     if (restart == false ) error0 = error; /*only update error0 at the very beginning*/
@@ -332,9 +365,10 @@ void MFgmres(
             T* hjk = h+j+(k-1)*(kspace+1);
             T* Qj  = Q+xdim*j;
 
-            mGPU_dot_wrapper<T>(blas_ctx->handle[0],xdim,v,Qj,tmp,loctmp,gmres_ctx->mpicomm);
+            mGPU_dot_wrapper<T>(blas_ctx->handle[0],xdim,v,Qj,tmp,loctmp,
+                                blas_ctx->stream,gmres_ctx->mpicomm);
 
-            cudaMemcpy(hjk, tmp, sizeof(T), cudaMemcpyDeviceToDevice);
+            cudaMemcpyAsync(hjk, tmp, sizeof(T), cudaMemcpyDeviceToDevice, blas_ctx->stream);
             
             copy_array<<<1,1,0,blas_ctx->stream>>>(tmp, tmp, (T)(-1.0), 1);
 
@@ -350,9 +384,11 @@ void MFgmres(
         }
         /* update h(k+1,k) */
         T* hkp1k = h+k+(k-1)*(kspace+1);
-        mGPU_dot_wrapper(blas_ctx->handle[0], xdim, v, v, tmp, loctmp, gmres_ctx->mpicomm);
+        mGPU_dot_wrapper(blas_ctx->handle[0], xdim, v, v, tmp, loctmp, 
+                         blas_ctx->stream, gmres_ctx->mpicomm);
         gpuSqrt<T><<<1,1,0,blas_ctx->stream>>>(tmp);
-        cudaMemcpy(hkp1k, tmp, sizeof(T), cudaMemcpyHostToDevice);
+
+        cudaMemcpyAsync(hkp1k, tmp, sizeof(T), cudaMemcpyDeviceToDevice, blas_ctx->stream);
         
         /*normalize v*/
         T* Qkp1  = Q+xdim*k;
@@ -375,7 +411,8 @@ void MFgmres(
         dot_one<T><<<1,1,0,blas_ctx->stream>>>(sn+k-1, beta+k-1, beta+k,  -1.0);
         dot_one<T><<<1,1,0,blas_ctx->stream>>>(cs+k-1, beta+k-1, beta+k-1, 1.0);
         error = 0.0;
-
+        
+        cudaStreamSynchronize(blas_ctx->stream);
         cudaMemcpy(&error, beta+k, sizeof(T), cudaMemcpyDeviceToHost);
         
         error = std::fabs(error)/bnorm_h;
@@ -444,10 +481,10 @@ void MFgmres(
         get_soln<<<nblocks,256,0,blas_ctx->stream>>>(beta+k, v, Q+k*xdim, xdim);
     }
     /*since not converged */
-    if (restart && icnt != 0) {
+    //if (restart && icnt != 0) {
         /*only allow restart except the first iteration in PTC*/
-        goto RESTART_ENTRY;
-    }
+        //goto RESTART_ENTRY;
+    //}
 
     /* solution is stored in x */
     /* copy solution for native data layout to PyFR data layout*/
@@ -461,5 +498,171 @@ void MFgmres(
     return;
 }
 
+template<typename T>
+void MFexponential(
+      void (*MatDotVec) (void*, bool), /* matrix-vector product func*/
+      void* solctx, /*solver context defined as provided*/
+      void* gtx,
+      void* btx,
+      unsigned int icnt
+    ) {
+    /* grab different application context*/
+    struct gmres_app_ctx<T>* gmres_ctx = (struct gmres_app_ctx<T>*) (gtx);
+    struct cublas_app_ctx* blas_ctx = (struct cublas_app_ctx*) (btx);
+
+    /* dimension of the problem and krylov subspace*/
+    unsigned long int xdim = gmres_ctx->xdim;
+    unsigned int kspace = gmres_ctx->kspace;
+    
+    /*small vectors*/
+    T* sn   = gmres_ctx->sn;    // dimension kspace+1
+    T* cs   = gmres_ctx->cs;    // dimension kspace+1
+    T* beta = gmres_ctx->beta;  // dimension kspace+11
+    
+    /*large vectors*/
+    T* Q = gmres_ctx->Q; // dimension xdim*(kspace+1)
+    T* h = gmres_ctx->h; // dimension (kspace+1)*kspace
+    T* v = gmres_ctx->v; // dimension  xdim
+
+    unsigned long int nblocks = std::ceil((T)xdim/256);
+
+    /*use some preallocated ram*/
+    T* bnorm = beta+kspace+1;
+    T* rnorm = beta+kspace+2;
+    T* loc   = beta+kspace+3;
+    
+    T  bnorm_h, rnorm_h;
+
+    /*compute the norm of b vector, we do not store b in gmres ctx, b is on PyFR*/
+    mGPU_dot_breg_wrapper<T>(gtx, bnorm, loc, blas_ctx->handle[0], blas_ctx->stream);
+    /*take sqaure root of bnorm*/
+    gpuSqrt<T><<<1,1,0,blas_ctx->stream>>>(bnorm);
+    
+    cudaMemcpy(&bnorm_h, bnorm, sizeof(T), cudaMemcpyDeviceToHost);
+
+    /*set up the initial value*/
+    set_zero_wrapper(v,   xdim, blas_ctx->stream);   
+
+    set_zero_wrapper(sn,   kspace+1, blas_ctx->stream);   /*initialization to 0*/
+    set_zero_wrapper(cs,   kspace+1, blas_ctx->stream);
+    set_zero_wrapper(beta, kspace+1, blas_ctx->stream);   /*do not cross boundary*/
+
+    /*copy the initial guess to the current reg bank in PyFR*/
+    gmres_ctx->copy_to_user(
+        gmres_ctx->x_reg, reinterpret_cast<unsigned long long int> (v), 
+        gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape, blas_ctx->stream
+    );
+
+    MatDotVec(solctx, true);
+
+    gmres_ctx->copy_to_native(
+        gmres_ctx->curr_reg, reinterpret_cast<unsigned long long int> (Q), 
+        gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape, blas_ctx->stream
+    );
+    
+    /* compute the norm of r = b - Ax */
+    /* for initial guess x = 0, for restart x != 0*/
+    mGPU_dot_wrapper<T>(blas_ctx->handle[0], xdim, Q, Q, rnorm, loc, 
+                        blas_ctx->stream,  gmres_ctx->mpicomm);
+    
+    /*take sqrt of rnorm*/
+    gpuSqrt<T><<<1,1,0,blas_ctx->stream>>>(rnorm);
+    
+    cudaMemcpy(&rnorm_h, rnorm, sizeof(T), cudaMemcpyDeviceToHost);
+
+    /*setting up initial beta vector, sync calling*/
+    cudaMemcpy(beta, rnorm, sizeof(T), cudaMemcpyDeviceToDevice);
+    
+    T* rnormi = beta+kspace+3;
+    gpuReciprocal<<<1,1,0,blas_ctx->stream>>>(rnorm, rnormi);
+
+    /*normalize Q*/
+    if constexpr (std::is_same<float, T>::value) {
+        cublasSscal(blas_ctx->handle[0], xdim, rnormi, Q, 1);
+    } else
+    if constexpr (std::is_same<double, T>::value){
+        cublasDscal(blas_ctx->handle[0], xdim, rnormi, Q, 1);
+    }
+    
+    for(unsigned int k=1;k<kspace+1;k++) {
+        /*perform matrix vector product approximation here*/
+        /*v = Aq, need to copy q into the current bank in PyFR*/
+        gmres_ctx->copy_to_user(
+            gmres_ctx->curr_reg, reinterpret_cast<unsigned long long int> (Q+(k-1)*xdim), 
+            gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape, blas_ctx->stream
+        );
+
+        MatDotVec(solctx, false);
+        
+        /*v = Aq is obtained in PyFR, need to copy to v*/
+        gmres_ctx->copy_to_native(
+            gmres_ctx->curr_reg, reinterpret_cast<unsigned long long int> (v),
+            gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape, blas_ctx->stream
+        );
+
+        T* tmp = beta+kspace+3;
+        T* loctmp = beta+kspace+4;
+        for(unsigned int j=0;j<k;j++) {
+            T* hjk = h+j+(k-1)*(kspace+1);
+            T* Qj  = Q+xdim*j;
+
+            mGPU_dot_wrapper<T>(blas_ctx->handle[0],xdim,v,Qj,tmp,loctmp,
+                                blas_ctx->stream,gmres_ctx->mpicomm);
+
+            cudaMemcpyAsync(hjk, tmp, sizeof(T), cudaMemcpyDeviceToDevice, blas_ctx->stream);
+            copy_array<<<1,1,0,blas_ctx->stream>>>(tmp, tmp, (T)(-1.0), 1);
+            /* update v = v-hjk*Qj */
+            if constexpr (std::is_same<float, T>::value) {
+                cublasSaxpy(blas_ctx->handle[0], xdim, tmp, Qj, 1, v, 1);
+            } else 
+            if constexpr (std::is_same<double,T>::value) {
+                cublasDaxpy(blas_ctx->handle[0], xdim, tmp, Qj, 1, v, 1);
+            }
+
+        }
+        /* update h(k+1,k) */
+        T* hkp1k = h+k+(k-1)*(kspace+1);
+        mGPU_dot_wrapper(blas_ctx->handle[0], xdim, v, v, tmp, loctmp, 
+                         blas_ctx->stream, gmres_ctx->mpicomm);
+        gpuSqrt<T><<<1,1,0,blas_ctx->stream>>>(tmp);
+
+        cudaMemcpyAsync(hkp1k, tmp, sizeof(T), cudaMemcpyDeviceToDevice, blas_ctx->stream);
+        
+        /*normalize v*/
+        T* Qkp1  = Q+xdim*k;
+
+        gpuReciprocal<T><<<1,1,0,blas_ctx->stream>>>(tmp, tmp);
+        copy_array<<<nblocks,256,0,blas_ctx->stream>>>(Qkp1, v, tmp, xdim);
+        cudaStreamSynchronize(blas_ctx->stream);
+    }
+    /* done building up krylov space, need to perform the matrix exponential*/
+    struct expm_ctx<T>* expmctx = gmres_ctx->expmctx;
+    struct expm_ctx_ram<T>* expmramctx = gmres_ctx->expmram_ctx;
+
+    T* mcoef = expmramctx->padecoef_d;
+    T* buffer = expmramctx->buffer;
+    T* expm_abys = (T*) expmramctx->aby;
+
+    unsigned int padedim = expmctx->dim;
+    unsigned int padep   = expmctx->p;
+
+    expmctx->_eval_matrix_exponential(
+            h, mcoef, buffer, expmctx->A, expmctx->Ainv, padedim, padep, 
+            expm_abys, expm_abys+1, expm_abys+2, expmctx->handle
+    );
+
+    /*do the matrix vector product*/
+
+    /* solution is stored in x */
+    /* copy solution for native data layout to PyFR data layout*/
+    gmres_ctx->copy_to_user(
+       gmres_ctx->x_reg, reinterpret_cast<unsigned long long int> (v), 
+       gmres_ctx->etypes, gmres_ctx->datadim, gmres_ctx->datashape, blas_ctx->stream
+    );
+    
+    /*synchronize our stream before we return back to PyFR*/
+    cudaStreamSynchronize(blas_ctx->stream);
+    return;
+}
 
 #endif
